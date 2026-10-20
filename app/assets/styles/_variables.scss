@@ -1,0 +1,25 @@
+$breakpoint-desktop: 1024px;
+
+// Палитра макета
+$color-sky: #71c5ef;
+$color-board: #e8f0f6;
+$color-frame: #cdf4ff;
+$color-disabled: #bcd5db;
+$color-ink: #200f60;
+$color-accent: #f08a5d;
+$color-accent-shadow: #b46846;
+// Заполнение рамки-прогресса — в макете только 0%, цвет выбран сами
+$color-progress: #36a9e8;
+
+$font-display: 'Rubik Bubbles', 'Rubik', system-ui, sans-serif;
+$font-body: 'Rubik', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+// Рамка карточек и рабочей области
+$frame-border: 16px;
+$frame-radius: 64px;
+
+@mixin desktop {
+  @media (min-width: $breakpoint-desktop) {
+    @content;
+  }
+}
