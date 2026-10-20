@@ -1,17 +1,22 @@
 <script setup lang="ts">
+definePageMeta({ guestOnly: true })
 useHead({ title: 'Вход — Раскраска' })
 
+const route = useRoute()
+const auth = useAuthStore()
 const countries = useCountryOptions()
 
 const country = ref('')
 const username = ref('')
 const error = ref('')
+const pending = ref(false)
 
 onMounted(() => {
   if (!country.value) country.value = detectCountry()
 })
 
 async function submit() {
+  if (pending.value) return
   error.value = ''
   if (!isCountryCode(country.value)) {
     error.value = 'Выбери страну'
@@ -22,8 +27,16 @@ async function submit() {
     error.value = problem
     return
   }
-  // Сессия появится вместе с сервером, пока просто открываем галерею
-  await navigateTo('/coloring')
+
+  pending.value = true
+  try {
+    await auth.login(country.value, normalizeUsername(username.value))
+    await navigateTo(safeRedirect(route.query.redirect), { replace: true })
+  } catch (failure) {
+    error.value = errorMessage(failure, 'Не получилось войти — проверь интернет и попробуй ещё раз')
+  } finally {
+    pending.value = false
+  }
 }
 </script>
 
@@ -53,7 +66,9 @@ async function submit() {
 
       <p class="login__error" role="alert">{{ error }}</p>
 
-      <button class="login__submit" type="submit">Играть</button>
+      <button class="login__submit" type="submit" :disabled="pending">
+        {{ pending ? 'Входим…' : 'Играть' }}
+      </button>
     </form>
   </main>
 </template>
@@ -156,11 +171,15 @@ async function submit() {
   font-size: 24px;
   font-weight: 700;
   margin-bottom: 6px;
-  transition: transform 0.1s, box-shadow 0.1s;
+  transition: transform 0.1s, box-shadow 0.1s, opacity 0.15s;
 
-  &:active {
+  &:active:not(:disabled) {
     transform: translateY(4px);
     box-shadow: 0 2px 0 $color-accent-shadow;
+  }
+
+  &:disabled {
+    opacity: 0.7;
   }
 }
 </style>

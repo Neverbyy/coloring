@@ -8,7 +8,7 @@ export const galleryKeys = {
 
 // Ошибки 4xx не временные — повторять запрос бессмысленно
 function retryTransient(failureCount: number, error: unknown) {
-  const status = (error as { statusCode?: number } | null)?.statusCode
+  const status = errorStatus(error)
   if (status && status >= 400 && status < 500) return false
   return failureCount < 1
 }

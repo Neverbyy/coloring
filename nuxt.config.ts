@@ -8,6 +8,11 @@ export default defineNuxtConfig({
     strict: true,
     typeCheck: false
   },
+  // Только сервер. Значение задаётся при запуске через NUXT_DATABASE_URL,
+  // поэтому строка подключения не попадает в сборку
+  runtimeConfig: {
+    databaseUrl: ''
+  },
   app: {
     head: {
       htmlAttrs: { lang: 'ru' },

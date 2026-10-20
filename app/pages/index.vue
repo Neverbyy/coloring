@@ -1,5 +1,6 @@
 <script setup lang="ts">
-definePageMeta({ redirect: '/login' })
+// Гостя отсюда отправит на вход middleware auth.global
+definePageMeta({ redirect: HOME_PATH })
 </script>
 
 <template>

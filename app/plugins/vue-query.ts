@@ -1,9 +1,19 @@
-import { QueryClient, VueQueryPlugin, dehydrate, hydrate, type DehydratedState } from '@tanstack/vue-query'
+import { QueryCache, QueryClient, VueQueryPlugin, dehydrate, hydrate, type DehydratedState } from '@tanstack/vue-query'
 
 export default defineNuxtPlugin((nuxtApp) => {
   const queryState = useState<DehydratedState | null>('vue-query', () => null)
 
   const queryClient = new QueryClient({
+    queryCache: new QueryCache({
+      // Сессия истекла, пока игрок был на странице, — возвращаем на вход
+      onError: (error) => {
+        if (import.meta.server || errorStatus(error) !== 401) return
+        nuxtApp.runWithContext(() => {
+          useAuthStore().forget()
+          return navigateTo('/login')
+        })
+      }
+    }),
     defaultOptions: {
       queries: {
         staleTime: 30_000,
@@ -26,4 +36,6 @@ export default defineNuxtPlugin((nuxtApp) => {
       if (queryState.value) hydrate(queryClient, queryState.value)
     })
   }
+
+  return { provide: { queryClient } }
 })

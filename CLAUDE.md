@@ -7,7 +7,7 @@
 
 ## Статус
 
-- Свёрстаны экраны: вход (`app/pages/login.vue`), галерея и экран рисования (слой `layers/coloring/`). Данные галереи — API `layers/coloring/server/api/coloring/arts/` поверх заглушки `server/utils/galleryArts.ts` (три базовых PNG, без БД), на клиенте — TanStack Query (`useGalleryQueries.ts`), постранично по 11 артов + карточка импорта. Рисования, сервера и админки ещё нет.
+- Свёрстаны экраны: вход (`app/pages/login.vue`), галерея и экран рисования (слой `layers/coloring/`). Данные галереи — API `layers/coloring/server/api/coloring/arts/` из таблицы `coloring_arts` (три базовых PNG), на клиенте — TanStack Query (`useGalleryQueries.ts`), постранично по 11 артов + карточка импорта. Вход и сессии работают: таблицы `users`/`sessions` (`server/db/schema.ts`), API `server/api/auth/*`, стор `app/stores/auth.ts`, middleware `app/middleware/auth.global.ts` (страница для гостей — `definePageMeta({ guestOnly: true })`), на сервере `requireUser(event)` в каждом защищённом обработчике. Прогресса по пользователям, рисования, импорта и админки ещё нет.
 - Звонок с тех. лидом **не проведён** — 3 рабочих дня отсчитываются после него. Ответы вписываются в `docs/QUESTIONS.md`; после этого обновить раздел «Решения».
 - Решения, не заблокированные вопросами, принимаем сами и фиксируем в `README.md` (так требует ТЗ).
 
@@ -23,13 +23,15 @@
 
 ## Решения (предварительные, до звонка)
 
-- **Деплой и БД:** Vercel + Postgres (Supabase или Neon). Переменные окружения задаются в Vercel, после изменения — Redeploy.
+- **Деплой и БД:** Vercel + Supabase Postgres (проект в eu-west-1 → регион функций Vercel `dub1`). Переменные окружения задаются в Vercel, после изменения — Redeploy.
+- **Доступ к БД:** только сервер, Drizzle ORM + `postgres.js` (`server/utils/db.ts`, `useDb()`); Supabase Auth/`supabase-js` не используем. Приложение — transaction pooler 6543 (`NUXT_DATABASE_URL` → `runtimeConfig.databaseUrl`, `prepare: false`), миграции — session pooler 5432 (`DATABASE_MIGRATION_URL`). Схемы — `layers/*/server/db/schema.ts`, таблицы с префиксом игры; миграции — `server/db/migrations` (`npm run db:generate` / `db:migrate`). **На каждой новой таблице — `.enableRLS()`** без политик, иначе она открыта через REST API Supabase по публичному ключу.
 - **Архитектура под мини-игры:** общий «слой платформы» (вход, сессия, галерея, аналитика, админка) + игра «раскраска» отдельным модулем (Nuxt Layers или `games/coloring`). Новая игра подключается без правок общей части.
 - **Рендер раскраски:** canvas поверх SVG; каждый сегмент — маска/Path2D; штрих обрезается по сегменту, где началось касание (pointerdown), до pointerup.
 - **История:** журнал операций (штрих / заливка / очистка) + периодические снимки; хранится на сервере; undo/redo после перезагрузки.
 - **Админка:** тот же домен, `/admin`, отдельный layout и чанк, `noindex`. Защита — серверная проверка роли для всех `/api/admin/*` (middleware страниц не защищает данные). Вход админа — логин/пароль (учётка из env или БД), сессия в httpOnly-cookie.
 - **Сохранение/шеринг (кнопка камеры):** PNG без UI через `canvas.toBlob()` → `navigator.share({ files })` (в системном окне есть «Сохранить изображение»); иначе — скачивание через `<a download>`. PNG готовить заранее (после автосохранения): Safari теряет user activation при долгом `await` перед `share()`. `AbortError` при отмене — не ошибка. Прямое сохранение в галерею без подтверждения в браузере невозможно — описать в README.
 - **«Нативность» игры:** без скролла страницы, overscroll/pull-to-refresh, выделения, зума (щипок, двойной тап), перетаскивания картинок и меню по долгому тапу. Готовый рецепт — в соседнем проекте: `../paywall/app/plugins/native-feel.client.ts` и правила `html`/`body`/`img` в `../paywall/app/assets/css/main.css`, viewport `maximum-scale=1, user-scalable=no`. В админке эти ограничения не нужны.
+- **Ошибки API:** русский текст — только в `createError({ message })`; h3 1.x вырезает не-ASCII из `statusMessage`. На клиенте — `errorStatus()` / `errorMessage()` из `app/utils/httpError.ts`.
 - **Безопасность SVG:** санитизация (скрипты, `foreignObject`, внешние ссылки, `on*`-атрибуты), лимит размера, обработка на сервере.
 
 ## Как работаем (выводы из прошлого тестового — пейволл в `../paywall`)
