@@ -20,7 +20,7 @@ useHead({ title: () => `${art.value?.title ?? 'Раскраска'} — Раск
 
 const progress = computed(() => Math.round(art.value?.progress ?? 0))
 
-useGameFullscreen({ lockLandscape: true })
+useGameFullscreen()
 
 // История действий появится вместе с движком рисования
 const canUndo = ref(false)
@@ -67,8 +67,6 @@ const canRedo = ref(false)
         <ColoringSidePanel />
       </div>
     </div>
-
-    <ColoringRotateHint />
   </main>
 </template>
 
@@ -88,23 +86,6 @@ $column-width: 90px;
     padding: 20px;
     background: $color-sky;
   }
-
-  // Телефон в портретной ориентации: экран рассчитан на горизонталь, поэтому поворачиваем его
-  // на 90° по часовой. Игрок поворачивает телефон — и игра встаёт ровно, даже если автоповорот
-  // выключен (тогда браузер остаётся «портретным»). При включённом автоповороте браузер сам
-  // перейдёт в горизонталь, и это правило перестанет действовать
-  @media (orientation: portrait) and (max-width: 599px) {
-    inset: auto;
-    top: 0;
-    left: 0;
-    width: 100vh;
-    width: 100dvh;
-    height: 100vw;
-    height: 100dvw;
-    transform-origin: top left;
-    transform: translateX(100vw) rotate(90deg);
-    transform: translateX(100dvw) rotate(90deg);
-  }
 }
 
 .board {
@@ -122,6 +103,13 @@ $column-width: 90px;
     overflow: hidden;
     border-radius: $frame-radius;
   }
+
+  // Телефон вертикально: сверху дом и камера, посередине холст, внизу полоса инструментов и цветов
+  @include phone-portrait {
+    flex-direction: column;
+    gap: 12px;
+    padding: max(12px, env(safe-area-inset-top)) 12px 0;
+  }
 }
 
 .board__left {
@@ -133,6 +121,12 @@ $column-width: 90px;
   width: $column-width;
   // Снизу отступа нет: в макете камера стоит вплотную к нижнему краю колонки
   padding-top: 16px;
+
+  @include phone-portrait {
+    flex-direction: row;
+    width: auto;
+    padding: 0 4px;
+  }
 }
 
 .board__home,
@@ -165,6 +159,12 @@ $column-width: 90px;
 .board__right {
   flex: none;
   width: calc(#{$column-width} + env(safe-area-inset-right));
+
+  // Вертикально — полоса внизу, карандаши остриём вверх уходят за нижний край
+  @include phone-portrait {
+    width: auto;
+    height: calc(#{$column-width} + env(safe-area-inset-bottom));
+  }
 }
 
 .frame {
@@ -176,6 +176,10 @@ $column-width: 90px;
   border: $frame-border solid $color-frame;
   border-radius: $frame-radius;
   background: #fff;
+
+  @include phone-portrait {
+    min-height: 0;
+  }
 }
 
 .frame__art {

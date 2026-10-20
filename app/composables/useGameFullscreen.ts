@@ -1,23 +1,20 @@
-// Полноэкранный режим игры на телефоне: прячет панель браузера и системные кнопки.
-// На экране рисования (Android) ещё и фиксирует горизонтальную ориентацию. Браузер разрешает
-// полный экран только в ответ на действие пользователя (нажатие). На iPhone Fullscreen API
-// для страниц нет — там просто ничего не происходит
+// Полноэкранный режим игры на телефоне: прячет панель браузера и системные кнопки,
+// на Android ещё и фиксирует вертикальную ориентацию (игра на телефоне только вертикальная).
+// Браузер разрешает полный экран только в ответ на действие пользователя (нажатие).
+// На iPhone Fullscreen API для страниц нет — там просто ничего не происходит
 
 type LockableOrientation = ScreenOrientation & {
-  lock?: (orientation: 'landscape') => Promise<void>
+  lock?: (orientation: 'portrait') => Promise<void>
 }
 
 interface FullscreenOptions {
   // Игрок сам начал игру (вход, нажатие на карточку): снова предлагаем полный экран,
   // даже если до этого он из него вышел
   explicit?: boolean
-  // Зафиксировать горизонталь — только для экрана рисования
-  lockLandscape?: boolean
 }
 
 let listening = false
 let entered = false
-let locked = false
 // Игрок сам вышел из полноэкранного режима — не навязываем его до следующего явного действия
 let exitedByUser = false
 // Повторный requestFullscreen, пока первый не завершился, браузер отклоняет — переиспользуем
@@ -29,6 +26,11 @@ function isSupported(): boolean {
     && typeof document.documentElement.requestFullscreen === 'function'
 }
 
+// Вертикаль фиксируем только на телефонах: планшеты работают в любой ориентации
+function isPhone(): boolean {
+  return Math.min(screen.width, screen.height) < 600
+}
+
 function listen() {
   if (listening) return
   listening = true
@@ -38,7 +40,6 @@ function listen() {
     } else {
       if (entered) exitedByUser = true
       entered = false
-      locked = false
     }
   })
 }
@@ -56,33 +57,26 @@ export async function requestGameFullscreen(options: FullscreenOptions = {}): Pr
   if (!isSupported()) return
   listen()
   if (options.explicit) exitedByUser = false
-  if (exitedByUser) return
-  if (document.fullscreenElement && (locked || !options.lockLandscape)) return
+  if (exitedByUser || document.fullscreenElement) return
 
-  if (!(await enterFullscreen()) || !options.lockLandscape) return
+  if (!(await enterFullscreen()) || !isPhone()) return
 
   try {
-    await (screen.orientation as LockableOrientation).lock?.('landscape')
-    locked = true
+    // Фиксация снимается сама при выходе из полноэкранного режима
+    await (screen.orientation as LockableOrientation).lock?.('portrait')
   } catch {
-    // Фиксация ориентации поддерживается не везде — играть можно и без неё
+    // Поддерживается не везде — тогда в горизонтали выручит подсказка «Поверни телефон»
   }
 }
 
-// Для экранов игры: если на экран попали без нажатия (ссылка, перезагрузка) — включаем
-// полный экран по первому касанию. При уходе с экрана снимаем фиксацию ориентации
-export function useGameFullscreen(options: Pick<FullscreenOptions, 'lockLandscape'> = {}) {
-  const onPointerUp = () => requestGameFullscreen(options)
+// Для экранов игры: если на экран попали без нажатия (ссылка, перезагрузка) —
+// включаем полный экран по первому касанию
+export function useGameFullscreen() {
+  const onPointerUp = () => requestGameFullscreen()
 
   onMounted(() => {
     if (isSupported()) window.addEventListener('pointerup', onPointerUp)
   })
 
-  onBeforeUnmount(() => {
-    window.removeEventListener('pointerup', onPointerUp)
-    if (locked) {
-      screen.orientation?.unlock?.()
-      locked = false
-    }
-  })
+  onBeforeUnmount(() => window.removeEventListener('pointerup', onPointerUp))
 }
