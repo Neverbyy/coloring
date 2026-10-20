@@ -22,6 +22,34 @@
       "when": 1792514134688,
       "tag": "0002_users_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792522397394,
+      "tag": "0003_coloring_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792522410868,
+      "tag": "0004_base_arts_sizes",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792529793459,
+      "tag": "0005_drop_ops_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792529808578,
+      "tag": "0006_coloring_drawings",
+      "breakpoints": true
     }
   ]
 }

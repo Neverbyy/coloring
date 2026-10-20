@@ -11,8 +11,9 @@ const page = computed(() => {
 })
 
 const { data, isPlaceholderData, suspense } = useGalleryPageQuery(page)
-// SSR отдаёт галерею уже с данными; в браузере запрос не повторяется (dehydrate/hydrate)
-await suspense()
+// SSR отдаёт галерею уже с данными; в браузере запрос не повторяется (dehydrate/hydrate).
+// Если страница уже в кэше (возврат из арта) — показываем сразу, обновление идёт в фоне
+if (import.meta.server || !data.value) await suspense()
 
 // Сервер вернул другую страницу (номер вне диапазона) — исправляем адрес
 watch(() => data.value?.page, (actual) => {

@@ -1,17 +1,50 @@
 <script setup lang="ts">
+import { useQueryClient } from '@tanstack/vue-query'
 import type { GalleryArt } from '../../../shared/gallery'
 
-defineProps<{ art: GalleryArt }>()
+const props = defineProps<{ art: GalleryArt }>()
 defineEmits<{ delete: [] }>()
+
+// Рисунок начинает грузиться в момент нажатия — пока идёт переход, ответ уже в пути
+const queryClient = useQueryClient()
+function prefetch() {
+  fetchDrawing(queryClient, props.art).catch(() => {})
+}
+
+// Свежий рисунок из этой вкладки показываем сразу, не дожидаясь ответа сервера
+const previews = useDrawingPreviews()
+const preview = computed(() => previews.get(props.art.id))
+// Миниатюра рисунка — вся бумага с полями; раскладываем её как экран рисования:
+// картинка вписана в карточку, поля заполняют остаток. Без рисунка — исходная картинка
+const thumbnail = computed(() => preview.value?.thumbnail ?? props.art.thumbnail)
+const paperStyle = computed(() => paperLayout(props.art.width, props.art.height))
+const progress = computed(() => preview.value?.progress ?? props.art.progress)
 </script>
 
 <template>
   <div class="art-card">
-    <NuxtLink class="art-card__link" :to="`/coloring/${art.id}`" :aria-label="`${art.title}, ${art.progress}%`">
+    <NuxtLink
+      class="art-card__link"
+      :to="`/coloring/${art.id}`"
+      :aria-label="`${art.title}, ${Math.floor(progress)}%`"
+      @pointerdown="prefetch"
+      @keydown.enter="prefetch"
+    >
       <span class="art-card__art">
-        <img class="art-card__image" :src="art.image" :alt="art.title" draggable="false" loading="lazy">
+        <span class="art-card__stage" :style="{ '--ratio': art.width / art.height }">
+          <img
+            v-if="thumbnail"
+            class="art-card__paper"
+            :style="paperStyle"
+            :src="thumbnail"
+            :alt="art.title"
+            draggable="false"
+            loading="lazy"
+          >
+          <img v-else class="art-card__image" :src="art.image" :alt="art.title" draggable="false" loading="lazy">
+        </span>
       </span>
-      <ColoringProgressFrame :progress="art.progress" />
+      <ColoringProgressFrame :progress="progress" />
     </NuxtLink>
     <button
       v-if="art.own"
@@ -48,10 +81,20 @@ defineEmits<{ delete: [] }>()
 }
 
 .art-card__art {
-  display: block;
+  container-type: size;
+  display: grid;
+  place-items: center;
   height: 100%;
   overflow: hidden;
   border-radius: $frame-radius - $frame-border;
+}
+
+// Размер вписанной картинки; бумага выходит за него, лишнее обрезает карточка
+.art-card__stage {
+  position: relative;
+  display: block;
+  width: min(100cqw, calc(100cqh * var(--ratio)));
+  aspect-ratio: var(--ratio);
 }
 
 .art-card__image {
@@ -59,6 +102,12 @@ defineEmits<{ delete: [] }>()
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+
+.art-card__paper {
+  position: absolute;
+  display: block;
+  max-width: none;
 }
 
 .art-card__delete {

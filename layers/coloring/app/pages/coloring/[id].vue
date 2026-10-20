@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import { useQueryClient } from '@tanstack/vue-query'
+import type { SyncStatus } from '../../engine/sync'
+
 const route = useRoute()
 const tools = useColoringToolsStore()
+const queryClient = useQueryClient()
 
 const id = computed(() => String(route.params.id))
 const { data: art, error, suspense } = useArtQuery(id)
-// Ошибку разбираем ниже, suspense лишь дожидается ответа
-await suspense().catch(() => undefined)
+// Ошибку разбираем ниже, suspense лишь дожидается ответа. При переходе из галереи данные
+// арта уже есть (кэш галереи) — экран показывается сразу, обновление идёт в фоне
+if (import.meta.server || !art.value) await suspense().catch(() => undefined)
 
 if (error.value) {
   const statusCode = (error.value as { statusCode?: number }).statusCode ?? 500
@@ -18,34 +23,105 @@ if (error.value) {
 
 useHead({ title: () => `${art.value?.title ?? 'Раскраска'} — Раскраска` })
 
-const progress = computed(() => Math.round(art.value?.progress ?? 0))
+const canvas = useTemplateRef('canvas')
 
-// История действий появится вместе с движком рисования
+// Пока холст не загрузился — прогресс с сервера, потом — живой
+const liveProgress = ref<number | null>(null)
+const progress = computed(() => liveProgress.value ?? art.value?.progress ?? 0)
+// Вниз: 100% — только когда закрашено всё
+const percent = computed(() => Math.floor(progress.value))
+
 const canUndo = ref(false)
 const canRedo = ref(false)
+const syncStatus = ref<SyncStatus>('saved')
+
+// Завершение: встряска камеры и «Готово!»; вспышка — при снимке картинки
+const shaking = ref(false)
+const celebrating = ref(false)
+const flashing = ref(false)
+let celebrateTimer: ReturnType<typeof setTimeout> | undefined
+
+function onHistory(undo: boolean, redo: boolean) {
+  canUndo.value = undo
+  canRedo.value = redo
+}
+
+function onCompleted() {
+  shaking.value = true
+  celebrating.value = true
+  clearTimeout(celebrateTimer)
+  celebrateTimer = setTimeout(() => { celebrating.value = false }, 2600)
+}
+
+async function onCamera() {
+  if (!canvas.value || !art.value) return
+  flashing.value = true
+  try {
+    await shareImage(await canvas.value.exportImage(), art.value.title)
+  } catch {
+    // Рисунок ещё не загрузился — снимать нечего
+  }
+}
+
+// Галерея покажет новый прогресс
+onBeforeUnmount(() => {
+  clearTimeout(celebrateTimer)
+  queryClient.invalidateQueries({ queryKey: ['coloring'] })
+})
 </script>
 
 <template>
   <main v-if="art" class="art-screen">
-    <div class="board">
+    <div class="board" :class="{ 'board--shake': shaking }" @animationend.self="shaking = false">
       <div class="board__left">
         <NuxtLink class="board__home" to="/coloring" aria-label="В галерею">
           <img src="../../assets/icons/home.svg" alt="" width="64" height="60">
         </NuxtLink>
-        <button type="button" class="board__camera" aria-label="Сохранить или поделиться картинкой">
+        <button
+          type="button"
+          class="board__camera"
+          :class="{ 'board__camera--hint': percent >= 100 }"
+          aria-label="Сохранить или поделиться картинкой"
+          @click="onCamera"
+        >
           <img src="../../assets/icons/camera.svg" alt="" width="64" height="65">
         </button>
       </div>
 
       <section class="frame" aria-label="Рисунок">
         <div class="frame__art" @pointerdown="tools.closePalette()">
-          <img class="frame__image" :src="art.image" :alt="art.title" draggable="false">
+          <ColoringCanvas
+            ref="canvas"
+            :art="art"
+            @progress="liveProgress = $event"
+            @history="onHistory"
+            @status="syncStatus = $event"
+            @completed="onCompleted"
+          />
         </div>
 
-        <p class="frame__progress" aria-live="polite">{{ progress }}%</p>
+        <p class="frame__progress" :class="{ 'frame__progress--done': percent >= 100 }" aria-live="polite">
+          {{ percent }}%
+        </p>
+
+        <p v-if="syncStatus === 'offline'" class="frame__status" role="status">
+          Нет связи — сохраним позже
+        </p>
+
+        <Transition name="frame-done">
+          <p v-if="celebrating" class="frame__done" role="status">Готово!</p>
+        </Transition>
+
+        <span v-if="flashing" class="frame__flash" aria-hidden="true" @animationend="flashing = false" />
 
         <div class="frame__history">
-          <button type="button" class="frame__history-button" :disabled="!canUndo" aria-label="Отменить">
+          <button
+            type="button"
+            class="frame__history-button"
+            :disabled="!canUndo"
+            aria-label="Отменить"
+            @click="canvas?.undo()"
+          >
             <ColoringUndoIcon />
           </button>
           <button
@@ -53,6 +129,7 @@ const canRedo = ref(false)
             class="frame__history-button frame__history-button--redo"
             :disabled="!canRedo"
             aria-label="Повторить"
+            @click="canvas?.redo()"
           >
             <ColoringUndoIcon />
           </button>
@@ -86,18 +163,28 @@ $column-width: 90px;
   }
 }
 
+// Форма области рисунка ограничена: соотношение сторон от 0.5 до 1.6 (PAPER_MAX_ASPECT в
+// shared/history.ts). Шире или выше рамку не покрыла бы бумага — по краям нельзя было бы рисовать.
+// На очень широких и низких экранах (ноутбук 1366×657) доска чуть уже и стоит по центру.
+// Расчёт: колонки и рамка по ширине — 212px; по высоте отступы доски, рамка и кнопки отмены
+$frame-max-aspect: 1.6;
+$frame-min-aspect: 0.5;
+$board-chrome-x: 2 * $column-width + 2 * $frame-border;
+
 .board {
   display: flex;
   width: 100%;
   height: 100%;
-  max-width: 1280px;
-  max-height: 920px;
+  max-width: min(1280px, calc(#{$frame-max-aspect} * (100dvh - 120px) + #{$board-chrome-x}));
+  max-height: min(920px, calc((100vw - #{$board-chrome-x}) / #{$frame-min-aspect} + 108px));
   padding-top: 16px;
   padding-bottom: max(16px, env(safe-area-inset-bottom));
   padding-left: env(safe-area-inset-left);
   background: $color-board;
 
   @include desktop {
+    max-width: min(1280px, calc(#{$frame-max-aspect} * (min(920px, 100dvh - 40px) - 138.58px) + #{$board-chrome-x}));
+    max-height: min(920px, calc((min(1280px, 100vw - 40px) - #{$board-chrome-x}) / #{$frame-min-aspect} + 108px));
     overflow: hidden;
     border-radius: $frame-radius;
   }
@@ -106,7 +193,37 @@ $column-width: 90px;
   @include phone-portrait {
     flex-direction: column;
     gap: 12px;
+    max-width: none;
+    max-height: none;
     padding: max(12px, env(safe-area-inset-top)) 12px 0;
+  }
+}
+
+// Встряска камеры после завершения рисунка
+.board--shake {
+  animation: board-shake 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes board-shake {
+  10%,
+  90% {
+    transform: translate(-2px, 1px) rotate(-0.3deg);
+  }
+
+  20%,
+  80% {
+    transform: translate(4px, -2px) rotate(0.5deg);
+  }
+
+  30%,
+  50%,
+  70% {
+    transform: translate(-6px, 2px) rotate(-0.7deg);
+  }
+
+  40%,
+  60% {
+    transform: translate(6px, -1px) rotate(0.7deg);
   }
 }
 
@@ -153,6 +270,31 @@ $column-width: 90px;
   }
 }
 
+// Рисунок готов — камера покачивается, подсказывая сохранить картинку
+.board__camera--hint img {
+  animation: camera-hint 1.6s ease-in-out infinite;
+}
+
+@keyframes camera-hint {
+  0%,
+  60%,
+  100% {
+    transform: rotate(-15deg) scale(1);
+  }
+
+  70% {
+    transform: rotate(-5deg) scale(1.12);
+  }
+
+  80% {
+    transform: rotate(-25deg) scale(1.12);
+  }
+
+  90% {
+    transform: rotate(-15deg) scale(1);
+  }
+}
+
 // Карандаши справа уходят за край экрана — колонка заходит в safe area
 .board__right {
   flex: none;
@@ -166,6 +308,9 @@ $column-width: 90px;
 }
 
 .frame {
+  // Размер кнопок отмены и повтора — от него же отступ рисунка снизу
+  --history-size: 55.94px;
+
   position: relative;
   display: flex;
   flex: 1;
@@ -175,24 +320,96 @@ $column-width: 90px;
   border-radius: $frame-radius;
   background: #fff;
 
+  @include desktop {
+    --history-size: 74.58px;
+  }
+
+  // Низкий экран (телефон с панелью браузера): стрелки меньше, чтобы не закрывать рисунок
+  @media (max-height: 360px) {
+    --history-size: 44px;
+  }
+
   @include phone-portrait {
     min-height: 0;
   }
 }
 
+// Рисунок вписан в рамку; снизу отступ под кнопки отмены — в макете они перекрывали
+// низ картинки, и там было бы не закрасить
 .frame__art {
+  container-type: size;
+  display: grid;
   flex: 1;
+  place-items: center;
   min-height: 0;
+  padding-bottom: var(--history-size);
   overflow: hidden;
   border-radius: $frame-radius - $frame-border;
   touch-action: none;
 }
 
-.frame__image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+// Связь с сервером пропала: рисовать можно, история сохранится позже
+.frame__status {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  max-width: calc(100% - 140px);
+  padding: 6px 12px;
+  border-radius: 12px;
+  background: #fff4d6;
+  color: $color-ink;
+  font-size: 14px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.frame__done {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: $font-display;
+  font-size: 64px;
+  color: $color-accent;
+  text-shadow: 0 0 0 #fff, 4px 4px 0 #fff, -4px -4px 0 #fff, 4px -4px 0 #fff, -4px 4px 0 #fff;
+  pointer-events: none;
+}
+
+.frame-done-enter-active {
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s;
+}
+
+.frame-done-leave-active {
+  transition: opacity 0.3s;
+}
+
+.frame-done-enter-from {
+  opacity: 0;
+  transform: scale(0.4);
+}
+
+.frame-done-leave-to {
+  opacity: 0;
+}
+
+// Вспышка «фотоаппарата» при сохранении картинки
+.frame__flash {
+  position: absolute;
+  inset: 0;
+  border-radius: $frame-radius - $frame-border;
+  background: #fff;
+  pointer-events: none;
+  animation: frame-flash 0.35s ease-out forwards;
+}
+
+@keyframes frame-flash {
+  from {
+    opacity: 0.9;
+  }
+
+  to {
+    opacity: 0;
+  }
 }
 
 // В макете левый край «0%» в 80px от правого края; прижимаем по правому, чтобы «100%» рос влево
@@ -206,6 +423,11 @@ $column-width: 90px;
   letter-spacing: 0.2px;
   color: #000;
   pointer-events: none;
+  transition: color 0.3s;
+}
+
+.frame__progress--done {
+  color: $color-accent;
 }
 
 .frame__history {
@@ -221,8 +443,8 @@ $column-width: 90px;
 }
 
 .frame__history-button {
-  width: 55.94px;
-  height: 55.94px;
+  width: var(--history-size);
+  height: var(--history-size);
   color: #000;
   transition: transform 0.1s, color 0.2s;
 
@@ -232,17 +454,6 @@ $column-width: 90px;
 
   &:disabled {
     color: $color-disabled;
-  }
-
-  @include desktop {
-    width: 74.58px;
-    height: 74.58px;
-  }
-
-  // Низкий экран (телефон с панелью браузера): стрелки меньше, чтобы не закрывать рисунок
-  @media (max-height: 360px) {
-    width: 44px;
-    height: 44px;
   }
 }
 

@@ -53,9 +53,13 @@ watch(() => recentColors.value.length, () => {
 // Активный инструмент — первым (сверху или слева), остальные за ним
 const tools = computed<ColoringTool[]>(() => [tool.value, ...COLORING_TOOLS.filter(item => item !== tool.value)])
 
+// Цвета показываются тем предметом, которым рисуют: кисточками или карандашами
+const colorKind = computed<Exclude<ColoringTool, 'eraser'>>(() => tool.value === 'brush' ? 'brush' : 'pencil')
+
 // Порядок в DOM — от конца панели (список *-reverse): активный, недавние, затем вся палитра.
-// В открытой палитре места хватает — недавние показываем все
+// В открытой палитре места хватает — недавние показываем все. У резинки цвета нет — список пуст
 const colors = computed(() => {
+  if (tool.value === 'eraser') return []
   const recent = paletteOpen.value ? recentColors.value : recentColors.value.slice(0, fit.value.recent)
   const pinned = [color.value, ...recent]
   if (!paletteOpen.value) return pinned
@@ -111,8 +115,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :tabindex="paletteOpen ? -1 : undefined"
           @click="store.selectTool(item)"
         >
+          <!-- Активные кисть и карандаш окрашены в выбранный цвет, остальные — как в макете -->
           <span class="side-panel__sprite">
-            <ColoringSprite :kind="item" :flip="item !== 'brush'" />
+            <ColoringSprite
+              :kind="item"
+              :color="item === tool && item !== 'eraser' ? color : undefined"
+              :flip="item !== 'brush'"
+            />
           </span>
         </button>
       </li>
@@ -141,8 +150,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :aria-expanded="hex === color ? paletteOpen : undefined"
           @click="onColorClick(hex)"
         >
+          <!-- Смена инструмента: предмет уезжает за край и возвращается кисточкой или карандашом -->
           <span class="side-panel__sprite">
-            <ColoringSprite kind="pencil" :color="hex" />
+            <Transition name="swap" mode="out-in">
+              <ColoringSprite :key="colorKind" :kind="colorKind" :color="hex" />
+            </Transition>
           </span>
         </button>
       </li>
@@ -300,5 +312,29 @@ $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 .color-enter-from,
 .color-leave-to {
   transform: var(--hidden);
+}
+
+// Карандаши ↔ кисточки — волной от активного цвета. Сдвиг вдоль самого рисунка:
+// он внутри повёрнутого контейнера, поэтому и в колонке, и в полосе уходит за край экрана
+.swap-enter-active,
+.swap-leave-active {
+  transition-delay: calc(min(var(--index), 8) * 25ms);
+}
+
+.swap-enter-active {
+  transition-property: transform;
+  transition-duration: 0.18s;
+  transition-timing-function: $ease-out;
+}
+
+.swap-leave-active {
+  transition-property: transform;
+  transition-duration: 0.12s;
+  transition-timing-function: ease-in;
+}
+
+.swap-enter-from,
+.swap-leave-to {
+  transform: translateX(100%);
 }
 </style>
