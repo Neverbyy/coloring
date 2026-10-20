@@ -23,8 +23,6 @@ watch(() => data.value?.page, (actual) => {
 
 watch(page, () => scroller.value?.scrollTo({ top: 0 }))
 
-useGameFullscreen()
-
 function onImport(_file: File) {
   // Импорт SVG (санитизация и разметка сегментов на сервере) — следующий этап
 }

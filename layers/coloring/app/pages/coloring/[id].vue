@@ -20,8 +20,6 @@ useHead({ title: () => `${art.value?.title ?? 'Раскраска'} — Раск
 
 const progress = computed(() => Math.round(art.value?.progress ?? 0))
 
-useGameFullscreen()
-
 // История действий появится вместе с движком рисования
 const canUndo = ref(false)
 const canRedo = ref(false)

@@ -7,12 +7,7 @@ defineEmits<{ delete: [] }>()
 
 <template>
   <div class="art-card">
-    <NuxtLink
-      class="art-card__link"
-      :to="`/coloring/${art.id}`"
-      :aria-label="`${art.title}, ${art.progress}%`"
-      @click="requestGameFullscreen({ explicit: true })"
-    >
+    <NuxtLink class="art-card__link" :to="`/coloring/${art.id}`" :aria-label="`${art.title}, ${art.progress}%`">
       <span class="art-card__art">
         <img class="art-card__image" :src="art.image" :alt="art.title" draggable="false" loading="lazy">
       </span>
