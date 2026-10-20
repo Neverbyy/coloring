@@ -20,6 +20,8 @@ useHead({ title: () => `${art.value?.title ?? 'Раскраска'} — Раск
 
 const progress = computed(() => Math.round(art.value?.progress ?? 0))
 
+useGameFullscreen()
+
 // История действий появится вместе с движком рисования
 const canUndo = ref(false)
 const canRedo = ref(false)
@@ -233,6 +235,12 @@ $column-width: 90px;
   @include desktop {
     width: 74.58px;
     height: 74.58px;
+  }
+
+  // Низкий экран (телефон с панелью браузера): стрелки меньше, чтобы не закрывать рисунок
+  @media (max-height: 360px) {
+    width: 44px;
+    height: 44px;
   }
 }
 

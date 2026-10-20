@@ -4,12 +4,56 @@ import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool } from '../../s
 const store = useColoringToolsStore()
 const { tool, color, recentColors, paletteOpen } = storeToRefs(store)
 
+// Размеры из макета: предмет 44px, зазор 2px; между блоками инструментов и цветов — не меньше 12px
+const ITEM_HEIGHT = 44
+const ITEM_GAP = 2
+const BLOCK_GAP = 12
+// Мельче предметы трудно попадать пальцем — дальше убираем недавние цвета
+const MIN_SCALE = 0.72
+
+const root = ref<HTMLElement | null>(null)
+// На низком экране (телефон с панелью браузера) предметы уменьшаются пропорционально,
+// а если не хватает и этого — показывается меньше недавних цветов
+const fit = ref({ scale: 1, recent: Number.POSITIVE_INFINITY })
+
+function fitToHeight(height: number) {
+  const maxRecent = recentColors.value.length
+  for (let recent = maxRecent; recent >= 0; recent--) {
+    const items = COLORING_TOOLS.length + 1 + recent
+    const gaps = (COLORING_TOOLS.length - 1 + recent) * ITEM_GAP + BLOCK_GAP
+    const scale = Math.min(1, (height - gaps) / (items * ITEM_HEIGHT))
+    if (scale >= MIN_SCALE || recent === 0) {
+      fit.value = { scale: Math.max(scale, 0.5), recent }
+      return
+    }
+  }
+}
+
+let observer: ResizeObserver | undefined
+let panelHeight = 0
+onMounted(() => {
+  if (!root.value) return
+  observer = new ResizeObserver(([entry]) => {
+    if (!entry) return
+    panelHeight = entry.contentRect.height
+    fitToHeight(panelHeight)
+  })
+  observer.observe(root.value)
+})
+onBeforeUnmount(() => observer?.disconnect())
+
+watch(() => recentColors.value.length, () => {
+  if (panelHeight) fitToHeight(panelHeight)
+})
+
 // Активный инструмент — всегда сверху, остальные под ним
 const tools = computed<ColoringTool[]>(() => [tool.value, ...COLORING_TOOLS.filter(item => item !== tool.value)])
 
-// Порядок в DOM — снизу вверх (список column-reverse): активный, недавние, затем вся палитра
+// Порядок в DOM — снизу вверх (список column-reverse): активный, недавние, затем вся палитра.
+// В открытой палитре места хватает — недавние показываем все
 const colors = computed(() => {
-  const pinned = [color.value, ...recentColors.value]
+  const recent = paletteOpen.value ? recentColors.value : recentColors.value.slice(0, fit.value.recent)
+  const pinned = [color.value, ...recent]
   if (!paletteOpen.value) return pinned
   return [...pinned, ...PALETTE.map(item => item.hex).filter(hex => !pinned.includes(hex))]
 })
@@ -41,7 +85,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <div class="side-panel">
+  <div ref="root" class="side-panel" :style="{ '--scale': fit.scale }">
     <TransitionGroup
       tag="ul"
       name="tool"
@@ -99,13 +143,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </template>
 
 <style scoped lang="scss">
-$item-height: 44px;
 $item-gap: 2px;
-// Неактивный предмет выглядывает на 60px из 90 — сдвигаем рисунок вправо на 30px
-$inactive-shift: 30px;
 $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
 .side-panel {
+  // --scale задаёт скрипт по высоте панели: 1 — размеры макета
+  --scale: 1;
+  // Неактивный предмет выглядывает на 60px из 90 — сдвигаем рисунок вправо на 30px
+  --shift: calc(30px * var(--scale));
+
   position: relative;
   height: 100%;
   overflow: hidden;
@@ -150,7 +196,7 @@ $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
 .side-panel__item {
   flex: none;
-  height: $item-height;
+  height: calc(44px * var(--scale));
   pointer-events: auto;
 }
 
@@ -161,20 +207,23 @@ $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   overflow: hidden;
 }
 
+// Рисунок 160×44 масштабируется вместе с предметом
 .side-panel__sprite {
   display: block;
   width: 160px;
-  transform: translateX($inactive-shift);
+  height: 44px;
+  transform-origin: 0 0;
+  transform: translateX(var(--shift)) scale(var(--scale));
   transition: transform 0.2s $ease-out;
 }
 
 .side-panel__button--active .side-panel__sprite {
-  transform: none;
+  transform: scale(var(--scale));
 }
 
 @media (hover: hover) {
   .side-panel__button:not(.side-panel__button--active):hover .side-panel__sprite {
-    transform: translateX($inactive-shift - 10px);
+    transform: translateX(calc(var(--shift) - 10px)) scale(var(--scale));
   }
 }
 
