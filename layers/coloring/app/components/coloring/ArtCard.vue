@@ -11,7 +11,7 @@ defineEmits<{ delete: [] }>()
       class="art-card__link"
       :to="`/coloring/${art.id}`"
       :aria-label="`${art.title}, ${art.progress}%`"
-      @click="requestGameFullscreen(true)"
+      @click="requestGameFullscreen({ explicit: true, lockLandscape: true })"
     >
       <span class="art-card__art">
         <img class="art-card__image" :src="art.image" :alt="art.title" draggable="false" loading="lazy">

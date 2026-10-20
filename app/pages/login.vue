@@ -28,6 +28,9 @@ async function submit() {
     return
   }
 
+  // До запроса на сервер: браузер разрешает полный экран только сразу после нажатия
+  requestGameFullscreen({ explicit: true })
+
   pending.value = true
   try {
     await auth.login(country.value, normalizeUsername(username.value))
