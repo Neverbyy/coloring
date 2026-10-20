@@ -86,6 +86,23 @@ $column-width: 90px;
     padding: 20px;
     background: $color-sky;
   }
+
+  // Телефон в портретной ориентации: экран рассчитан на горизонталь, поэтому поворачиваем его
+  // на 90° по часовой. Игрок поворачивает телефон — и игра встаёт ровно, даже если автоповорот
+  // выключен (тогда браузер остаётся «портретным»). При включённом автоповороте браузер сам
+  // перейдёт в горизонталь, и это правило перестанет действовать
+  @media (orientation: portrait) and (max-width: 599px) {
+    inset: auto;
+    top: 0;
+    left: 0;
+    width: 100vh;
+    width: 100dvh;
+    height: 100vw;
+    height: 100dvw;
+    transform-origin: top left;
+    transform: translateX(100vw) rotate(90deg);
+    transform: translateX(100dvw) rotate(90deg);
+  }
 }
 
 .board {
