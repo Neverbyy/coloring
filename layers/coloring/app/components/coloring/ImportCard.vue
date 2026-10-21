@@ -50,7 +50,17 @@ function onDrop(event: DragEvent) {
   height: $card-height;
   @include frame-card;
   cursor: pointer;
-  transition: transform 0.15s, border-color 0.15s;
+  transition: transform 0.25s $lift-easing, border-color 0.15s;
+
+  // Под мышью — как у карточек артов, плюс поворачивается. Раньше pressable: нажатие главнее
+  @include on-hover {
+    transform: translateY(-6px);
+
+    .import-card__icon {
+      transform: rotate(90deg) scale(1.1);
+    }
+  }
+
   @include pressable;
 
   // Только фокус с клавиатуры: после касания и выбора файла фокус остаётся на поле — кольцо не нужно
@@ -74,6 +84,7 @@ function onDrop(event: DragEvent) {
 
 .import-card__icon {
   display: block;
+  transition: transform 0.3s $lift-easing;
 }
 
 .import-card__spinner {

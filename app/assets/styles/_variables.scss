@@ -59,6 +59,18 @@ $card-height: 200px;
   outline-offset: -10px;
 }
 
+// Наведение мышью. На сенсорных экранах :hover «залипает» после касания — там эффекта нет
+@mixin on-hover {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover {
+      @content;
+    }
+  }
+}
+
+// Карточка под мышью приподнимается — с пружинкой
+$lift-easing: cubic-bezier(0.34, 1.56, 0.64, 1);
+
 // Кнопка или карточка чуть уменьшается под пальцем
 @mixin pressable($scale: 0.96) {
   &:active {

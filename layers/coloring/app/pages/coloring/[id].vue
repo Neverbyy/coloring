@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
+import { COLORING_SOUNDS } from '../../../shared/sounds'
 import type { SyncStatus } from '../../engine/sync'
 
 const route = useRoute()
@@ -46,7 +47,13 @@ function onHistory(undo: boolean, redo: boolean) {
   canRedo.value = redo
 }
 
+// Звук успеха: музыка на это время тише
+const SUCCESS_DUCK = 0.3
+const SUCCESS_DUCK_S = 2.2
+
 function onCompleted() {
+  playSound(COLORING_SOUNDS.success)
+  duckMusic(SUCCESS_DUCK, SUCCESS_DUCK_S)
   shaking.value = true
   celebrating.value = true
   clearTimeout(celebrateTimer)

@@ -4,24 +4,30 @@ import { context2d, createCanvas } from './canvas'
 export interface ToolStyle {
   // Толщина линии в точках рисунка (длинная сторона — 1024)
   width: number
-  // Непрозрачность штриха
-  alpha: number
-  // Зерно бумаги — фактура карандаша
-  grain: boolean
+  // Фактура блёсток (карандаш)
+  textured: boolean
 }
 
-// Кисть — широкая, сплошная, непрозрачная, как гуашь. Карандаш — тонкий, полупрозрачный, с зерном
+// Кисть — широкая и ровная, как гуашь. Карандаш — тонкий, с блёстками. Оба непрозрачные:
+// повторный штрих тем же цветом ничего не меняет, другим — закрывает прежний
 export const TOOL_STYLES: Record<StrokeTool, ToolStyle> = {
-  brush: { width: 34, alpha: 1, grain: false },
-  pencil: { width: 12, alpha: 0.9, grain: true },
-  eraser: { width: 40, alpha: 1, grain: false }
+  brush: { width: 34, textured: false },
+  pencil: { width: 12, textured: true },
+  eraser: { width: 40, textured: false }
 }
 
-const GRAIN_SIZE = 96
-// Зерно не должно делать штрих дырявым: самые светлые точки — 30% непрозрачности
-const GRAIN_MIN_ALPHA = 0.3
+// Плитка крупнее — повтор шума на большой заливке не заметен
+const TEXTURE_SIZE = 256
+// Самая светлая и самая тёмная крупинка: сколько белого или чёрного ложится поверх цвета
+const GRAIN_LIGHT = 0.6
+const GRAIN_DARK = 0.3
+// Больше 1 — большинство крупинок близки к цвету, сильные реже
+const GRAIN_SHAPE = 1.6
+// Блёстки — редкие почти белые точки
+const SPARKLE_CHANCE = 0.008
+const SPARKLE_ALPHA = 0.9
 
-// Детерминированный генератор: зерно одинаковое при каждом запуске, и повтор истории
+// Детерминированный генератор: фактура одинаковая при каждом запуске, и повтор истории
 // (отмена, перезагрузка) рисует ровно ту же картинку
 function mulberry32(seed: number) {
   let state = seed
@@ -33,22 +39,37 @@ function mulberry32(seed: number) {
   }
 }
 
-// Маска зерна: прозрачность каждой точки случайна, цвет не важен (используется как destination-in)
-export function createGrainPattern(context: CanvasRenderingContext2D): CanvasPattern {
-  const tile = createCanvas(GRAIN_SIZE, GRAIN_SIZE)
-  const tileContext = context2d(tile)
-  const image = tileContext.createImageData(GRAIN_SIZE, GRAIN_SIZE)
-  const random = mulberry32(20261020)
+let textureTile: HTMLCanvasElement | null = null
 
-  for (let i = 0; i < GRAIN_SIZE * GRAIN_SIZE; i++) {
-    // Лёгкие горизонтальные «волокна» бумаги плюс случайный шум
-    const y = Math.floor(i / GRAIN_SIZE)
-    const fibre = 0.15 * Math.sin(y * 1.7)
-    const noise = Math.pow(random(), 0.9)
-    const alpha = Math.min(1, GRAIN_MIN_ALPHA + (1 - GRAIN_MIN_ALPHA) * noise + fibre)
-    image.data[i * 4 + 3] = Math.round(Math.max(GRAIN_MIN_ALPHA, alpha) * 255)
+// Каждая точка плитки — белая или чёрная с прозрачностью: поверх цвета (source-atop) она
+// осветляет или затемняет его, а прозрачность штриха не меняет
+function drawTextureTile(): HTMLCanvasElement {
+  const tile = createCanvas(TEXTURE_SIZE, TEXTURE_SIZE)
+  const tileContext = context2d(tile)
+  const image = tileContext.createImageData(TEXTURE_SIZE, TEXTURE_SIZE)
+  const random = mulberry32(20261021)
+
+  for (let i = 0; i < TEXTURE_SIZE * TEXTURE_SIZE; i++) {
+    const value = random() * 2 - 1
+    const strength = Math.abs(value) ** GRAIN_SHAPE
+    let light = value > 0
+    let alpha = strength * (light ? GRAIN_LIGHT : GRAIN_DARK)
+    if (random() < SPARKLE_CHANCE) {
+      light = true
+      alpha = SPARKLE_ALPHA
+    }
+    const offset = i * 4
+    image.data[offset] = image.data[offset + 1] = image.data[offset + 2] = light ? 255 : 0
+    image.data[offset + 3] = Math.round(alpha * 255)
   }
 
   tileContext.putImageData(image, 0, 0)
-  return context.createPattern(tile, 'repeat')!
+  return tile
+}
+
+// Фактура карандаша «блёстки». Узор привязан к бумаге, а не к штриху: точка всегда получает
+// одну и ту же крупинку, поэтому повторный штрих не делает цвет плотнее
+export function createPencilTexture(context: CanvasRenderingContext2D): CanvasPattern {
+  textureTile ??= drawTextureTile()
+  return context.createPattern(textureTile, 'repeat')!
 }

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
 import type { GalleryArt } from '../../../shared/gallery'
-import { paperGeometry, type HistoryOp } from '../../../shared/history'
+import { paperGeometry, type HistoryOp, type StrokeTool } from '../../../shared/history'
+import { COLORING_SOUNDS } from '../../../shared/sounds'
 import { DrawingSession } from '../../engine/session'
 import { pendingStorageKey, type SyncStatus } from '../../engine/sync'
 
@@ -21,6 +22,8 @@ const HOLD_TOLERANCE = 10
 // Картинки (миниатюра, PNG для камеры) готовим в паузе: сборка и кодирование нагружают
 // браузер, и посреди рисования это заметно
 const IMAGES_IDLE_MS = 1500
+// Звук инструмента — только пока им водят по холсту: столько без движения — тишина
+const STROKE_SOUND_IDLE_MS = 150
 // Длинная сторона миниатюры для галереи. Миниатюра — вся бумага с полями (картинка в ней
 // ~40% по высоте), так картинка на карточке выходит ~290px — с запасом на плотные экраны
 const THUMBNAIL_SIZE = 720
@@ -68,6 +71,10 @@ let exported: { version: number, image: Blob } | null = null
 let imagesTimer: ReturnType<typeof setTimeout> | undefined
 // Рисунок менялся игроком, а миниатюра ещё старая
 let thumbnailStale = false
+// Инструмент текущего штриха и его звук
+let strokeTool: StrokeTool = 'brush'
+let strokeSound: LoopHandle | null = null
+let strokeSoundTimer: ReturnType<typeof setTimeout> | undefined
 
 async function init() {
   failed.value = false
@@ -172,6 +179,7 @@ function onPointerDown(event: PointerEvent) {
   const [x, y] = toWork(event)
   if (!session.engine.beginStroke(tools.tool, tools.color, x, y)) return
 
+  strokeTool = tools.tool
   pointerId = event.pointerId
   stage.value!.setPointerCapture(pointerId)
   const rect = stage.value!.getBoundingClientRect()
@@ -185,19 +193,39 @@ function onPointerMove(event: PointerEvent) {
   // Промежуточные точки (getCoalescedEvents) — для гладкой линии; рисуем их раз в кадр
   const coalesced = event.getCoalescedEvents?.() ?? []
   for (const point of coalesced.length ? coalesced : [event]) pendingPoints.push(...toWork(point))
-  if (!frame) frame = requestAnimationFrame(drawPending)
+  if (!frame) frame = requestAnimationFrame(onFrame)
 
   if (holdStart && Math.hypot(event.clientX - holdStart.clientX, event.clientY - holdStart.clientY) > HOLD_TOLERANCE) {
     cancelHold()
   }
 }
 
-function drawPending() {
+// Кадр: нарисовать накопленные точки; штрих двигается — звучит его инструмент
+function onFrame() {
+  frame = 0
+  if (drawPending() && session?.engine.drawing) strokeMoved()
+}
+
+// false — рисовать было нечего
+function drawPending(): boolean {
   cancelAnimationFrame(frame)
   frame = 0
-  if (!pendingPoints.length) return
+  if (!pendingPoints.length) return false
   session?.engine.extendStroke(pendingPoints)
   pendingPoints = []
+  return true
+}
+
+function strokeMoved() {
+  strokeSound ??= loopSound(COLORING_SOUNDS[strokeTool])
+  clearTimeout(strokeSoundTimer)
+  strokeSoundTimer = setTimeout(stopStrokeSound, STROKE_SOUND_IDLE_MS)
+}
+
+function stopStrokeSound() {
+  clearTimeout(strokeSoundTimer)
+  strokeSound?.stop()
+  strokeSound = null
 }
 
 function onPointerUp(event: PointerEvent) {
@@ -205,6 +233,7 @@ function onPointerUp(event: PointerEvent) {
   pointerId = null
   canvasRect = null
   cancelHold()
+  stopStrokeSound()
   drawPending()
   const op = session?.engine.endStroke()
   if (op) session!.commit(op)
@@ -222,11 +251,12 @@ function fillByHold() {
   const start = holdStart
   cancelHold()
   if (!session?.engine.drawing || !start) return
+  stopStrokeSound()
   pendingPoints = []
   const point: [number, number] = [Math.round(start.x), Math.round(start.y)]
   const op: HistoryOp = tools.tool === 'eraser'
     ? { t: 'clear', p: point }
-    : { t: 'fill', c: tools.color, p: point }
+    : { t: 'fill', tool: tools.tool, c: tools.color, p: point }
   session.engine.cancelStroke()
   session.engine.apply(op)
   session.commit(op)
@@ -276,6 +306,8 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   init()
+  // Звуки рисования и успеха — заранее, в простое (у карандаша 1.5 МБ)
+  whenIdle(() => preloadSounds(Object.values(COLORING_SOUNDS)))
 })
 
 onBeforeUnmount(() => {
@@ -283,6 +315,7 @@ onBeforeUnmount(() => {
   clearTimeout(holdTimer)
   clearTimeout(imagesTimer)
   cancelAnimationFrame(frame)
+  stopStrokeSound()
   forgetDrawing(queryClient, props.art.id)
   // Ушли сразу после штриха — миниатюра ещё старая: делаем последнюю и отдаём на отправку
   session?.dispose(thumbnailStale ? updateThumbnail() : undefined)

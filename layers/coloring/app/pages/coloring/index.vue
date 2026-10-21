@@ -27,6 +27,16 @@ watch(() => data.value?.page, (actual) => {
 
 watch(page, () => scroller.value?.scrollTo({ top: 0 }))
 
+// Смена страницы анимируется в сторону листания: вперёд — карточки въезжают справа, назад — слева.
+// Ключ сетки — номер показанной страницы: пока новая грузится, остаётся прежняя (без анимации)
+// Длительности — с CSS ниже: уход сетки и въезд карточек по очереди (последняя — с задержкой)
+const PAGE_LEAVE_MS = 140
+const PAGE_ENTER_MS = 450
+const pageTransition = ref('gallery-page-next')
+watch(() => data.value?.page, (next, previous) => {
+  if (next && previous) pageTransition.value = next >= previous ? 'gallery-page-next' : 'gallery-page-prev'
+})
+
 // На узком экране — лента экранов со свайпом вместо пагинации
 const { swipe, screens, currentScreen, goToScreen, showFirst, onScroll } = useGalleryScreens(pager, data)
 const { importing, importArt, deleteArt } = useOwnArts()
@@ -84,18 +94,20 @@ async function onDelete(art: GalleryArt) {
             'gallery__content--paged': !swipe && data && data.pageCount > 1
           }"
         >
-          <ul class="gallery__grid">
-            <li v-for="entry in screen" :key="entry.key">
-              <ColoringImportCard v-if="entry.kind === 'import'" :loading="importing" @select="onImport" />
-              <ColoringArtCard
-                v-else-if="entry.kind === 'art'"
-                :art="entry.art"
-                :deleting="deletingId === entry.art.id"
-                @delete="onDelete(entry.art)"
-              />
-              <span v-else class="gallery__placeholder" aria-hidden="true" />
-            </li>
-          </ul>
+          <Transition :name="pageTransition" mode="out-in" :duration="{ enter: PAGE_ENTER_MS, leave: PAGE_LEAVE_MS }">
+            <ul :key="swipe ? `screen-${index}` : `page-${data?.page}`" class="gallery__grid">
+              <li v-for="(entry, position) in screen" :key="entry.key" :style="{ '--i': position }">
+                <ColoringImportCard v-if="entry.kind === 'import'" :loading="importing" @select="onImport" />
+                <ColoringArtCard
+                  v-else-if="entry.kind === 'art'"
+                  :art="entry.art"
+                  :deleting="deletingId === entry.art.id"
+                  @delete="onDelete(entry.art)"
+                />
+                <span v-else class="gallery__placeholder" aria-hidden="true" />
+              </li>
+            </ul>
+          </Transition>
 
           <!-- Обёртка — своя: на узких экранах её прячет CSS ещё до загрузки скриптов -->
           <div v-if="!swipe && data && data.pageCount > 1" class="gallery__pagination">
@@ -118,6 +130,10 @@ async function onDelete(art: GalleryArt) {
       />
     </nav>
 
+    <div class="gallery__toolbar">
+      <MusicToggle />
+    </div>
+
     <ColoringNotice :message="notice?.message ?? null" :tone="notice?.tone" @close="notice = null" />
   </main>
 </template>
@@ -126,8 +142,10 @@ async function onDelete(art: GalleryArt) {
 $gap: 24px;
 // Место под точки экранов внизу
 $dots-height: 40px;
-// Карточки от верха (пагинация, лента экранов) — с этим отступом от края экрана
-$top-offset: 48px;
+// Кнопка музыки слева сверху (не выше выреза экрана); карточки начинаются под ней
+$toolbar-y: max(24px, env(safe-area-inset-top));
+$toolbar-size: 56px;
+$toolbar-gap: 20px;
 
 .gallery {
   position: fixed;
@@ -147,14 +165,22 @@ $top-offset: 48px;
   min-height: 100%;
 }
 
+// Сверху — место под кнопку музыки (во всех раскладках: иначе она закрыла бы первую карточку)
 .gallery__screen {
   display: flex;
   flex: 1 0 100%;
   padding:
-    max($gap, env(safe-area-inset-top))
+    calc(#{$toolbar-y} + #{$toolbar-size + $toolbar-gap})
     max($gap, env(safe-area-inset-right))
     max($gap, env(safe-area-inset-bottom))
     max($gap, env(safe-area-inset-left));
+}
+
+.gallery__toolbar {
+  position: fixed;
+  top: $toolbar-y;
+  left: max($gap, env(safe-area-inset-left));
+  z-index: 5;
 }
 
 // margin: auto центрирует галерею, пока она помещается (десктоп),
@@ -180,7 +206,6 @@ $top-offset: 48px;
   .gallery__content--paged {
     align-self: stretch;
     margin: 0 auto;
-    padding-top: $top-offset - $gap;
   }
 
   .gallery__content--paged .gallery__pagination {
@@ -193,6 +218,48 @@ $top-offset: 48px;
   // Не больше 4 колонок (как в макете), но не уже 140px — на узких экранах колонок меньше
   grid-template-columns: repeat(auto-fill, minmax(max(140px, calc((100% - 3 * #{$gap}) / 4)), 1fr));
   gap: $gap;
+}
+
+// Смена страницы (PAGE_LEAVE_MS / PAGE_ENTER_MS в скрипте): прежняя сетка быстро уходит
+// в сторону листания, карточки новой въезжают с другой стороны по очереди — 12 карточек
+// укладываются в 450 мс (задержка 15 мс на карточку + 280 мс въезда)
+.gallery-page-next-leave-active,
+.gallery-page-prev-leave-active {
+  transition: opacity 0.14s ease-in, transform 0.14s ease-in;
+}
+
+.gallery-page-next-leave-to {
+  opacity: 0;
+  transform: translateX(-24px);
+}
+
+.gallery-page-prev-leave-to {
+  opacity: 0;
+  transform: translateX(24px);
+}
+
+.gallery-page-next-enter-active > li,
+.gallery-page-prev-enter-active > li {
+  animation: gallery-card-in 0.28s $lift-easing both;
+  animation-delay: calc(var(--i) * 15ms);
+}
+
+.gallery-page-prev-enter-active > li {
+  animation-name: gallery-card-in-back;
+}
+
+@keyframes gallery-card-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px) scale(0.94);
+  }
+}
+
+@keyframes gallery-card-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-32px) scale(0.94);
+  }
 }
 
 // Заглушка карточки: пока страница грузится, экран уже нужного размера
@@ -258,13 +325,12 @@ $top-offset: 48px;
     }
   }
 
-  // Отступ сверху — у экрана, а не у карточек: от его внутренней высоты считаются ряды
+  // Отступы — у экрана, а не у карточек: от его внутренней высоты считаются ряды
   // (скрипт и обрезка по рядам в CSS)
   .gallery__screen {
     container-type: size;
     min-height: 0;
     overflow: hidden;
-    padding-top: max($top-offset, calc(env(safe-area-inset-top) + #{$gap}));
     padding-bottom: calc(max($gap, env(safe-area-inset-bottom)) + #{$dots-height});
     scroll-snap-align: start;
     scroll-snap-stop: always;

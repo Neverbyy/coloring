@@ -53,7 +53,7 @@ const fallback = computed(() => {
 </script>
 
 <template>
-  <div ref="root" class="progress-frame" :style="style" aria-hidden="true">
+  <div ref="root" class="progress-frame" :class="{ 'progress-frame--done': value >= 1 }" :style="style" aria-hidden="true">
     <svg class="progress-frame__svg">
       <!-- rx-атрибут — на случай, если браузер не понимает rx в CSS -->
       <rect
@@ -110,6 +110,11 @@ const fallback = computed(() => {
   stroke-dasharray: var(--wrap) calc(var(--start) - var(--wrap)) var(--main) var(--perimeter);
   rx: var(--r);
   ry: var(--r);
-  transition: stroke-dasharray 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: stroke-dasharray 0.6s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.3s;
+}
+
+// На 100% — оранжевая, как цифра «100%»: голубая сливается с небом и синей краской
+.progress-frame--done .progress-frame__bar {
+  stroke: $color-accent;
 }
 </style>

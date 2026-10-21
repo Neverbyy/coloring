@@ -117,9 +117,15 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
 </template>
 
 <style scoped lang="scss">
+// Под мышью карточка приподнимается целиком (вместе с крестиком)
 .art-card {
   position: relative;
   height: $card-height;
+  transition: transform 0.25s $lift-easing;
+
+  @include on-hover {
+    transform: translateY(-6px);
+  }
 }
 
 .art-card__link {

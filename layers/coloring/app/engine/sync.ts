@@ -1,7 +1,7 @@
 import { errorStatus } from '~/utils/httpError'
 import { artApiPath } from '../../shared/gallery'
 import type { DrawingState, HistoryConflict, HistoryOp, HistorySave } from '../../shared/history'
-import { readStorage, removeStorage, writeStorage } from '../utils/storage'
+import { readStorage, removeStorage, writeStorage } from '~/utils/storage'
 
 // Ключ localStorage неотправленного рисунка (свой у каждого игрока).
 // v3 — координаты бумаги с полями, в хранилище только неотправленный хвост; база — ключом `…:base`

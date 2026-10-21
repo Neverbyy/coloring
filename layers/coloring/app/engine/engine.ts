@@ -1,13 +1,13 @@
 import { MAX_STROKE_POINTS, type HistoryOp, type StrokeOp, type StrokeTool } from '../../shared/history'
 import type { Box, Segment, SegmentMap } from './segmentation'
 import { context2d, createCanvas } from './canvas'
-import { TOOL_STYLES, createGrainPattern } from './textures'
+import { TOOL_STYLES, createPencilTexture } from './textures'
 
 // Касание попало на толстую линию — ищем ближайший сегмент в этом радиусе
 const SNAP_RADIUS = 10
 // Точки штриха ближе друг к другу не записываем
 const MIN_POINT_DISTANCE = 2
-// Пиксель закрашен, если непрозрачность не ниже (у карандаша с зерном она меньше 1)
+// Пиксель закрашен, если непрозрачность не ниже (края штриха сглажены — полупрозрачные)
 const PAINTED_ALPHA = 24
 // Сегмент, закрашенный на столько, считается закрашенным полностью:
 // пальцем не дотянуться до каждого пикселя у контура
@@ -63,7 +63,7 @@ export class ColoringEngine {
   private readonly meter: CanvasRenderingContext2D
   // Холст для итоговой картинки и миниатюры — один на все сборки
   private readonly output: CanvasRenderingContext2D
-  private readonly grain: CanvasPattern
+  private readonly texture: CanvasPattern
   private readonly masks = new Map<number, HTMLCanvasElement>()
   // Доля закрашенных пикселей каждого сегмента
   private readonly coverage: Float64Array
@@ -75,7 +75,7 @@ export class ColoringEngine {
   constructor(
     private readonly map: SegmentMap,
     paintCanvas: HTMLCanvasElement,
-    private readonly previewCanvas: HTMLCanvasElement
+    previewCanvas: HTMLCanvasElement
   ) {
     this.width = map.width
     this.height = map.height
@@ -87,7 +87,7 @@ export class ColoringEngine {
     this.preview = context2d(previewCanvas)
     this.stroke = context2d(createCanvas(this.width, this.height))
     this.scratch = context2d(createCanvas(this.width, this.height))
-    this.grain = createGrainPattern(this.preview)
+    this.texture = createPencilTexture(this.preview)
     this.coverage = new Float64Array(map.segments.length)
     this.countedBox = map.segments
       .filter(segment => !segment.background)
@@ -145,7 +145,6 @@ export class ColoringEngine {
       lastY: py,
       dirty: null
     }
-    this.previewCanvas.style.opacity = String(TOOL_STYLES[tool].alpha)
     this.drawPath([px, py])
     return true
   }
@@ -173,12 +172,7 @@ export class ColoringEngine {
     const active = this.active
     if (!active) return null
 
-    if (active.op.tool !== 'eraser' && active.dirty) {
-      this.paint.save()
-      this.paint.globalAlpha = TOOL_STYLES[active.op.tool].alpha
-      drawRegion(this.paint, this.preview.canvas, active.dirty)
-      this.paint.restore()
-    }
+    if (active.op.tool !== 'eraser' && active.dirty) drawRegion(this.paint, this.preview.canvas, active.dirty)
     this.clearStroke(active)
     this.active = null
     if (measure) this.measure(active.segment)
@@ -207,7 +201,7 @@ export class ColoringEngine {
 
     const segment = this.segmentAt(op.p[0], op.p[1])
     if (!segment) return null
-    if (op.t === 'fill') this.fillSegment(segment, op.c)
+    if (op.t === 'fill') this.fillSegment(segment, op.c, op.tool === 'pencil')
     else this.clearSegment(segment)
     if (measure) this.measure(segment)
     return segment
@@ -313,6 +307,13 @@ export class ColoringEngine {
     const style = TOOL_STYLES[active.op.tool]
     const context = this.stroke
     const radius = style.width / 2
+    const { box } = active.segment
+    context.save()
+    // Только в рамке сегмента: после штриха холст очищается по ней, а след за её краем
+    // остался бы и попал в следующий штрих соседнего сегмента чужим цветом
+    context.beginPath()
+    context.rect(box.x, box.y, box.w, box.h)
+    context.clip()
     context.fillStyle = context.strokeStyle = active.op.c ?? '#000000'
     context.lineWidth = style.width
     context.lineCap = 'round'
@@ -339,12 +340,13 @@ export class ColoringEngine {
       }
       context.stroke()
     }
+    context.restore()
 
     const pad = radius + 2
     this.flush(area ?? { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 })
   }
 
-  // Перерисовать область штриха: обрезать маской сегмента, наложить зерно;
+  // Перерисовать область штриха: обрезать маской сегмента, наложить фактуру;
   // у резинки — сразу стереть краску в этой области
   private flush(area: Box) {
     const active = this.active!
@@ -373,22 +375,27 @@ export class ColoringEngine {
     target.globalCompositeOperation = 'destination-in'
     // Маска — только кусок под областью: у фона она размером со всю бумагу
     target.drawImage(this.mask(active.segment), box.x - segmentBox.x, box.y - segmentBox.y, box.w, box.h, box.x, box.y, box.w, box.h)
-    if (style.grain) {
-      target.fillStyle = this.grain
-      target.fillRect(box.x, box.y, box.w, box.h)
-    }
+    if (style.textured) this.applyTexture(target, box)
     target.restore()
 
     if (eraser) this.erase(() => drawRegion(this.paint, this.scratch.canvas, box))
   }
 
-  private fillSegment(segment: Segment, color: string) {
+  // Фактура поверх уже нарисованного цвета в области: прозрачные места остаются прозрачными
+  private applyTexture(context: CanvasRenderingContext2D, box: Box) {
+    context.globalCompositeOperation = 'source-atop'
+    context.fillStyle = this.texture
+    context.fillRect(box.x, box.y, box.w, box.h)
+  }
+
+  private fillSegment(segment: Segment, color: string, textured: boolean) {
     const { box } = segment
     const context = this.scratch
     context.save()
     context.clearRect(box.x, box.y, box.w, box.h)
     context.fillStyle = color
     context.fillRect(box.x, box.y, box.w, box.h)
+    if (textured) this.applyTexture(context, box)
     context.globalCompositeOperation = 'destination-in'
     context.drawImage(this.mask(segment), box.x, box.y)
     context.restore()

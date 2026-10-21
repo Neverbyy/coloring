@@ -34,8 +34,9 @@ export type StrokeTool = 'brush' | 'pencil' | 'eraser'
 
 // p — точки штриха подряд: x1, y1, x2, y2, …
 export interface StrokeOp { t: 'stroke', tool: StrokeTool, c: string | null, p: number[] }
-// Удержание кисти или карандаша — заливка сегмента в точке p
-export interface FillOp { t: 'fill', c: string, p: [number, number] }
+// Удержание кисти или карандаша — заливка сегмента в точке p: кисть — ровным цветом,
+// карандаш — с фактурой. Без tool — кисть (так записаны заливки до появления поля)
+export interface FillOp { t: 'fill', tool?: Exclude<StrokeTool, 'eraser'>, c: string, p: [number, number] }
 // Удержание резинки — очистка сегмента в точке p
 export interface ClearOp { t: 'clear', p: [number, number] }
 export type HistoryOp = StrokeOp | FillOp | ClearOp
@@ -122,7 +123,9 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
   if (op.t === 'fill') {
     const point = toPoint(op.p)
     if (!point || typeof op.c !== 'string' || !COLORS.has(op.c)) return null
-    return { t: 'fill', c: op.c, p: point }
+    const tool = op.tool ?? 'brush'
+    if (tool !== 'brush' && tool !== 'pencil') return null
+    return { t: 'fill', tool, c: op.c, p: point }
   }
 
   if (op.t === 'clear') {
