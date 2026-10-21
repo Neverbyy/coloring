@@ -10,7 +10,7 @@ export default defineEventHandler(async (event): Promise<GalleryPage> => {
 
   // Номер вне диапазона не ошибка: отдаём последнюю существующую страницу
   if (total === null) {
-    const all = await countGalleryArts()
+    const all = await countGalleryArts(user.id)
     const last = Math.max(1, Math.ceil(all / GALLERY_PAGE_SIZE))
     if (page > last) {
       page = last

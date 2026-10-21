@@ -1,5 +1,9 @@
-export type ColoringTool = 'brush' | 'pencil' | 'eraser'
-type DrawingTool = Exclude<ColoringTool, 'eraser'>
+import type { StrokeTool } from '../../shared/history'
+
+// Инструменты панели — те же, что в операциях истории
+export type ColoringTool = StrokeTool
+// Чем рисуют цветом (у резинки цвета нет)
+export type DrawingTool = Exclude<ColoringTool, 'eraser'>
 
 export const COLORING_TOOLS: readonly ColoringTool[] = ['brush', 'pencil', 'eraser']
 

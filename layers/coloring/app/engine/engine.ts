@@ -1,5 +1,6 @@
 import { MAX_STROKE_POINTS, type HistoryOp, type StrokeOp, type StrokeTool } from '../../shared/history'
 import type { Box, Segment, SegmentMap } from './segmentation'
+import { context2d, createCanvas } from './canvas'
 import { TOOL_STYLES, createGrainPattern } from './textures'
 
 // Касание попало на толстую линию — ищем ближайший сегмент в этом радиусе
@@ -19,19 +20,6 @@ interface ActiveStroke {
   lastY: number
   // Где штрих уже нарисован — эту область переносим на холст в конце
   dirty: Box | null
-}
-
-function createCanvas(width: number, height: number): HTMLCanvasElement {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  return canvas
-}
-
-function context2d(canvas: HTMLCanvasElement, options?: CanvasRenderingContext2DSettings): CanvasRenderingContext2D {
-  const context = canvas.getContext('2d', options)
-  if (!context) throw new Error('Canvas 2D недоступен')
-  return context
 }
 
 // toBlob копирует холст в момент вызова — дальнейшее рисование в результат не попадёт
@@ -391,12 +379,7 @@ export class ColoringEngine {
     }
     target.restore()
 
-    if (eraser) {
-      this.paint.save()
-      this.paint.globalCompositeOperation = 'destination-out'
-      drawRegion(this.paint, this.scratch.canvas, box)
-      this.paint.restore()
-    }
+    if (eraser) this.erase(() => drawRegion(this.paint, this.scratch.canvas, box))
   }
 
   private fillSegment(segment: Segment, color: string) {
@@ -413,9 +396,14 @@ export class ColoringEngine {
   }
 
   private clearSegment(segment: Segment) {
+    this.erase(() => this.paint.drawImage(this.mask(segment), segment.box.x, segment.box.y))
+  }
+
+  // Стереть краску там, где draw рисует непрозрачное
+  private erase(draw: () => void) {
     this.paint.save()
     this.paint.globalCompositeOperation = 'destination-out'
-    this.paint.drawImage(this.mask(segment), segment.box.x, segment.box.y)
+    draw()
     this.paint.restore()
   }
 

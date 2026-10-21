@@ -101,7 +101,7 @@ async function show() {
   const element = list.value?.querySelector<HTMLElement>(`#${CSS.escape(optionId(activeIndex.value))}`)
   if (element && list.value) list.value.scrollTop = element.offsetTop - list.value.clientHeight / 2 + element.offsetHeight / 2
   // На тач-устройствах не открываем клавиатуру сразу — она закроет пол-экрана
-  if (window.matchMedia('(pointer: fine)').matches) search.value?.focus()
+  if (!isTouchDevice()) search.value?.focus()
 }
 
 function hide(focusTrigger = false) {
@@ -254,16 +254,8 @@ onBeforeUnmount(() => listen(false))
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
-  height: 56px;
-  padding: 0 20px;
-  border: 4px solid $color-frame;
-  border-radius: 24px;
-  background: #fff;
-  color: $color-ink;
-  font: 500 20px/1 $font-body;
+  @include text-field;
   text-align: left;
-  transition: border-color 0.15s;
 
   &:focus-visible,
   &--open {
@@ -300,7 +292,7 @@ onBeforeUnmount(() => listen(false))
 }
 
 .country-select__label--placeholder {
-  color: rgba($color-ink, 0.4);
+  color: $color-placeholder;
 }
 
 .country-select__panel {
@@ -335,7 +327,7 @@ onBeforeUnmount(() => listen(false))
   font: 500 18px/1 $font-body;
 
   &::placeholder {
-    color: rgba($color-ink, 0.4);
+    color: $color-placeholder;
   }
 }
 

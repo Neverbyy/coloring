@@ -1,6 +1,19 @@
 import { errorStatus } from '~/utils/httpError'
-import { drawingUrl } from '../composables/useGalleryQueries'
+import { artApiPath } from '../../shared/gallery'
 import type { DrawingState, HistoryConflict, HistoryOp, HistorySave } from '../../shared/history'
+import { readStorage, removeStorage, writeStorage } from '../utils/storage'
+
+// Ключ localStorage неотправленного рисунка (свой у каждого игрока).
+// v3 — координаты бумаги с полями, в хранилище только неотправленный хвост; база — ключом `…:base`
+export function pendingStorageKey(userId: string, artId: string): string {
+  return `coloring:v3:${userId}:${artId}`
+}
+
+// Забыть неотправленное (арт удалён)
+export function forgetPending(storageKey: string) {
+  removeStorage(storageKey)
+  removeStorage(`${storageKey}:base`)
+}
 
 // saved — всё на сервере, saving — отправляем, offline — сервер недоступен, повторим позже
 export type SyncStatus = 'saved' | 'saving' | 'offline'
@@ -96,7 +109,7 @@ export class HistorySync {
   }
 
   private url(path: string): string {
-    return drawingUrl(this.options.artId, path)
+    return artApiPath(this.options.artId, path)
   }
 
   private get baseKey(): string {
@@ -123,7 +136,7 @@ export class HistorySync {
     // База: своя неотправленная из localStorage или та же, что на сервере
     let baseImage: Blob | null = null
     if (pending.baseUnsent) {
-      const stored = this.readBaseImage()
+      const stored = readStorage(this.baseKey)
       if (pending.baseSeq > 0 && !stored) return this.discardPending(fromServer)
       baseImage = stored ? await dataUrlToBlob(stored) : null
     } else if (pending.baseSeq === server.baseSeq) {
@@ -171,13 +184,10 @@ export class HistorySync {
     // прежнее состояние, оно тоже полное
     blobToDataUrl(image).then((url) => {
       if (this.options.source.baseImage() !== image || !this.baseUnsent) return
-      try {
-        localStorage.setItem(this.baseKey, url)
-        this.baseStored = true
-        this.writePending()
-      } catch {
-        // Не поместилось — база уйдёт только на сервер
-      }
+      // Не поместилось — база уйдёт только на сервер
+      if (!writeStorage(this.baseKey, url)) return
+      this.baseStored = true
+      this.writePending()
     }).catch(() => {})
     this.schedule(DEBOUNCE_MS)
   }
@@ -273,7 +283,7 @@ export class HistorySync {
     if (source.baseSeq() === seq) {
       this.baseUnsent = false
       this.baseStored = false
-      this.removeItem(this.baseKey)
+      removeStorage(this.baseKey)
     }
     this.writePending()
   }
@@ -310,17 +320,9 @@ export class HistorySync {
   }
 
   private readPending(): PendingState | null {
+    const raw = readStorage(this.options.storageKey)
     try {
-      const raw = localStorage.getItem(this.options.storageKey)
       return raw ? JSON.parse(raw) as PendingState : null
-    } catch {
-      return null
-    }
-  }
-
-  private readBaseImage(): string | null {
-    try {
-      return localStorage.getItem(this.baseKey)
     } catch {
       return null
     }
@@ -341,28 +343,16 @@ export class HistorySync {
       progress: source.progress(),
       savedAt: Date.now()
     }
-    try {
-      localStorage.setItem(this.options.storageKey, JSON.stringify(pending))
-    } catch {
-      // Хранилище недоступно (приватный режим) или переполнено — остаётся только сервер
-    }
+    writeStorage(this.options.storageKey, JSON.stringify(pending))
   }
 
   private clearPending() {
-    this.removeItem(this.options.storageKey)
+    removeStorage(this.options.storageKey)
   }
 
   private discardPending(state: RestoredState): RestoredState {
     this.clearPending()
-    this.removeItem(this.baseKey)
+    removeStorage(this.baseKey)
     return state
-  }
-
-  private removeItem(key: string) {
-    try {
-      localStorage.removeItem(key)
-    } catch {
-      // Хранилище недоступно
-    }
   }
 }

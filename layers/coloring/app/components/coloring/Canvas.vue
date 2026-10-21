@@ -2,10 +2,8 @@
 import { useQueryClient } from '@tanstack/vue-query'
 import type { GalleryArt } from '../../../shared/gallery'
 import { paperGeometry, type HistoryOp } from '../../../shared/history'
-import { ColoringEngine } from '../../engine/engine'
-import { ColoringHistory } from '../../engine/history'
-import { buildSegmentMap } from '../../engine/segmentation'
-import { HistorySync, type SyncStatus } from '../../engine/sync'
+import { DrawingSession } from '../../engine/session'
+import { pendingStorageKey, type SyncStatus } from '../../engine/sync'
 
 const props = defineProps<{ art: GalleryArt }>()
 const emit = defineEmits<{
@@ -55,9 +53,7 @@ const artRegion = computed(() => {
   return { x: art.x, y: art.y, w: art.width, h: art.height }
 })
 
-let engine: ColoringEngine | null = null
-let history: ColoringHistory | null = null
-let sync: HistorySync | null = null
+let session: DrawingSession | null = null
 let pointerId: number | null = null
 let holdStart: { clientX: number, clientY: number, x: number, y: number } | null = null
 let holdTimer: ReturnType<typeof setTimeout> | undefined
@@ -75,75 +71,56 @@ let thumbnailStale = false
 
 async function init() {
   failed.value = false
-  sync?.dispose()
-  sync = null
+  session?.dispose()
+  session = null
   try {
     // Состояние и база — параллельно; обычно уже в пути с нажатия на карточку галереи
     const drawingPromise = fetchDrawing(queryClient, props.art)
     const image = lineArt.value!
     await image.decode()
+    const map = segmentArt(image, paper.value)
 
-    // Разметка сегментов: картинка на белой бумаге. Поля бумаги соединяются с фоном картинки —
-    // это один сегмент фона, его можно красить во всей рамке
-    const { width, height, art } = paper.value
-    const raster = document.createElement('canvas')
-    raster.width = width
-    raster.height = height
-    const context = raster.getContext('2d', { willReadFrequently: true })!
-    context.fillStyle = '#ffffff'
-    context.fillRect(0, 0, width, height)
-    context.drawImage(image, art.x, art.y, art.width, art.height)
-    const map = buildSegmentMap(context.getImageData(0, 0, width, height).data, width, height)
-
-    engine = new ColoringEngine(map, paintCanvas.value!, previewCanvas.value!)
-    const currentHistory = new ColoringHistory(engine, {
-      createScratch: () => ColoringEngine.offscreen(map),
-      onBase: (_seq, base) => sync?.baked(base)
-    })
-    history = currentHistory
-    const currentSync = new HistorySync({
+    const current = new DrawingSession({
       artId: props.art.id,
-      // v3 — координаты бумаги с полями, в хранилище только неотправленный хвост
-      storageKey: `coloring:v3:${auth.user?.id ?? 'guest'}:${props.art.id}`,
-      source: {
-        baseSeq: () => currentHistory.baseSeq,
-        baseImage: () => currentHistory.baseImage,
-        ops: () => currentHistory.ops,
-        cursor: () => currentHistory.cursor,
-        progress: () => engine?.progress() ?? 0
-      },
+      storageKey: pendingStorageKey(auth.user?.id ?? 'guest', props.art.id),
+      map,
+      paintCanvas: paintCanvas.value!,
+      previewCanvas: previewCanvas.value!,
+      onChange: report,
       onStatus: status => emit('status', status),
-      onUnauthorized: () => {
-        auth.forget()
-        navigateTo('/login')
-      }
+      onUnauthorized: () => auth.expire()
     })
-    sync = currentSync
+    session = current
 
     const { state, base } = await drawingPromise
-    currentHistory.load(await currentSync.restore(state, base))
-    await currentHistory.renderAt(currentHistory.cursor)
-    if (import.meta.dev) (window as unknown as { __coloring?: unknown }).__coloring = { engine, history, map }
+    await current.load(state, base)
+    if (import.meta.dev) {
+      // Для проверок Playwright; segment — повторная разметка (замер времени)
+      (window as unknown as { __coloring?: unknown }).__coloring = {
+        engine: current.engine,
+        history: current.history,
+        map,
+        segment: () => segmentArt(image, paper.value)
+      }
+    }
     ready.value = true
     // Рисунок начат, а миниатюры у галереи нет (сброшена или не дошла) — сделаем заново
-    if (!props.art.thumbnail && currentHistory.head > 0) thumbnailStale = true
-    report(false)
+    if (!props.art.thumbnail && current.history.head > 0) thumbnailStale = true
   } catch (error) {
     if (errorStatus(error) === 401) {
-      auth.forget()
-      await navigateTo('/login')
+      await auth.expire()
       return
     }
     failed.value = true
   }
 }
 
-// Сообщить странице прогресс и доступность отмены/повтора
+// Сообщить странице прогресс и доступность отмены/повтора; в паузе — обновить картинки
 function report(byPlayer: boolean) {
-  if (!engine || !history) return
-  const progress = engine.progress()
+  if (!session) return
+  const progress = session.progress
   emit('progress', progress)
-  emit('history', history.canUndo, history.canRedo)
+  emit('history', session.canUndo, session.canRedo)
   if (byPlayer && lastProgress < 100 && progress >= 100) emit('completed')
   lastProgress = progress
   version++
@@ -161,46 +138,39 @@ function whenIdle(task: () => void) {
 // иметь заранее — Safari не даёт открыть «Поделиться» после долгого ожидания внутри нажатия.
 // На компьютере файл скачивается, и картинка собирается по нажатию
 function prepareImages() {
-  if (engine?.drawing) return
-  if (window.matchMedia('(pointer: coarse)').matches) exportImage().catch(() => {})
+  if (session?.engine.drawing) return
+  if (isTouchDevice()) exportImage().catch(() => {})
   if (!thumbnailStale) return
   updateThumbnail().then((image) => {
-    if (image) sync?.queueThumbnail(image)
+    if (image) session?.queueThumbnail(image)
   }).catch(() => {})
 }
 
 // Миниатюра сразу попадает в галерею этой вкладки, на сервер — вместе с автосохранением
 async function updateThumbnail(): Promise<Blob | null> {
-  if (!engine || !lineArt.value) return null
+  if (!session || !lineArt.value) return null
   thumbnailStale = false
-  const progress = engine.progress()
-  const image = await engine.thumbnail(lineArt.value, artRegion.value, THUMBNAIL_SIZE)
+  const progress = session.progress
+  const image = await session.engine.thumbnail(lineArt.value, artRegion.value, THUMBNAIL_SIZE)
   previews.set(props.art.id, image, progress)
   return image
 }
 
-function commit(op: HistoryOp) {
-  if (!history || !sync) return
-  const truncatedTo = history.canRedo ? history.cursor : undefined
-  history.push(op)
-  sync.changed(truncatedTo)
-  report(true)
-}
-
 function toWork(event: PointerEvent): [number, number] {
+  const engine = session!.engine
   const rect = canvasRect ?? paintCanvas.value!.getBoundingClientRect()
   return [
-    (event.clientX - rect.left) / rect.width * engine!.width,
-    (event.clientY - rect.top) / rect.height * engine!.height
+    (event.clientX - rect.left) / rect.width * engine.width,
+    (event.clientY - rect.top) / rect.height * engine.height
   ]
 }
 
 function onPointerDown(event: PointerEvent) {
-  if (!ready.value || busy.value || !engine || pointerId !== null) return
+  if (!ready.value || busy.value || !session || pointerId !== null) return
   if (!event.isPrimary || event.button !== 0) return
   canvasRect = paintCanvas.value!.getBoundingClientRect()
   const [x, y] = toWork(event)
-  if (!engine.beginStroke(tools.tool, tools.color, x, y)) return
+  if (!session.engine.beginStroke(tools.tool, tools.color, x, y)) return
 
   pointerId = event.pointerId
   stage.value!.setPointerCapture(pointerId)
@@ -211,7 +181,7 @@ function onPointerDown(event: PointerEvent) {
 }
 
 function onPointerMove(event: PointerEvent) {
-  if (event.pointerId !== pointerId || !engine?.drawing) return
+  if (event.pointerId !== pointerId || !session?.engine.drawing) return
   // Промежуточные точки (getCoalescedEvents) — для гладкой линии; рисуем их раз в кадр
   const coalesced = event.getCoalescedEvents?.() ?? []
   for (const point of coalesced.length ? coalesced : [event]) pendingPoints.push(...toWork(point))
@@ -226,7 +196,7 @@ function drawPending() {
   cancelAnimationFrame(frame)
   frame = 0
   if (!pendingPoints.length) return
-  engine?.extendStroke(pendingPoints)
+  session?.engine.extendStroke(pendingPoints)
   pendingPoints = []
 }
 
@@ -236,8 +206,8 @@ function onPointerUp(event: PointerEvent) {
   canvasRect = null
   cancelHold()
   drawPending()
-  const op = engine?.endStroke()
-  if (op) commit(op)
+  const op = session?.engine.endStroke()
+  if (op) session!.commit(op)
 }
 
 function cancelHold() {
@@ -251,42 +221,42 @@ function cancelHold() {
 function fillByHold() {
   const start = holdStart
   cancelHold()
-  if (!engine?.drawing || !start) return
+  if (!session?.engine.drawing || !start) return
   pendingPoints = []
   const point: [number, number] = [Math.round(start.x), Math.round(start.y)]
   const op: HistoryOp = tools.tool === 'eraser'
     ? { t: 'clear', p: point }
     : { t: 'fill', c: tools.color, p: point }
-  engine.cancelStroke()
-  engine.apply(op)
-  commit(op)
+  session.engine.cancelStroke()
+  session.engine.apply(op)
+  session.commit(op)
+}
+
+// Отмена и повтор — не посреди штриха и не пока идёт предыдущая отмена
+function canEditHistory(): boolean {
+  return ready.value && !busy.value && !!session && !session.engine.drawing
 }
 
 async function undo() {
-  if (!ready.value || busy.value || !history?.canUndo || engine?.drawing) return
+  if (!canEditHistory() || !session!.canUndo) return
   busy.value = true
   try {
-    await history.undo()
-    sync?.changed()
-    report(true)
+    await session!.undo()
   } finally {
     busy.value = false
   }
 }
 
 function redo() {
-  if (!ready.value || busy.value || !history?.canRedo || engine?.drawing) return
-  history.redo()
-  sync?.changed()
-  report(true)
+  if (canEditHistory()) session!.redo()
 }
 
 // PNG результата без интерфейса; готовый берём из кэша, если рисунок с тех пор не менялся
 async function exportImage(): Promise<Blob> {
-  if (!engine || !lineArt.value) throw new Error('Рисунок ещё не загружен')
+  if (!session || !lineArt.value) throw new Error('Рисунок ещё не загружен')
   if (exported?.version === version) return exported.image
   const current = version
-  const image = await engine.exportImage(lineArt.value, artRegion.value)
+  const image = await session.engine.exportImage(lineArt.value, artRegion.value)
   exported = { version: current, image }
   return image
 }
@@ -315,7 +285,7 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(frame)
   forgetDrawing(queryClient, props.art.id)
   // Ушли сразу после штриха — миниатюра ещё старая: делаем последнюю и отдаём на отправку
-  sync?.dispose(thumbnailStale ? updateThumbnail() : undefined)
+  session?.dispose(thumbnailStale ? updateThumbnail() : undefined)
 })
 
 defineExpose({ undo, redo, exportImage })

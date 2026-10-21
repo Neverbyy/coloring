@@ -6,6 +6,27 @@ function drawingOf(userId: string, artId: string) {
   return and(eq(coloringDrawings.userId, userId), eq(coloringDrawings.artId, artId))
 }
 
+type DrawingColumns = typeof coloringDrawings.$inferSelect
+type Transaction = Parameters<Parameters<ReturnType<typeof useDb>['transaction']>[0]>[0]
+
+// Изменение рисунка под блокировкой строки: строка создаётся, если её ещё нет, и читается
+// (нужные поля) с FOR UPDATE — параллельные сохранения того же рисунка идут по очереди
+async function withLockedDrawing<K extends keyof DrawingColumns, T>(
+  userId: string,
+  artId: string,
+  fields: readonly K[],
+  change: (tx: Transaction, row: Pick<DrawingColumns, K>, where: ReturnType<typeof drawingOf>) => Promise<T>
+): Promise<T> {
+  const where = drawingOf(userId, artId)
+  const columns = Object.fromEntries(fields.map(field => [field, coloringDrawings[field]])) as { [P in K]: (typeof coloringDrawings)[P] }
+  return useDb().transaction(async (tx) => {
+    await tx.insert(coloringDrawings).values({ userId, artId }).onConflictDoNothing()
+    const [row] = await tx.select(columns).from(coloringDrawings).where(where).for('update')
+    if (!row) throw createError({ statusCode: 500, message: 'Не удалось сохранить рисунок' })
+    return change(tx, row as Pick<DrawingColumns, K>, where)
+  })
+}
+
 export async function loadDrawing(userId: string, artId: string): Promise<DrawingState> {
   const [row] = await useDb()
     .select({
@@ -24,23 +45,8 @@ export async function loadDrawing(userId: string, artId: string): Promise<Drawin
 
 // Операции после fromSeq заменяются присланными (после отмены и нового действия «хвост» отбрасывается).
 // Повтор того же запроса даёт тот же результат — клиент может спокойно повторять при сбоях сети
-export async function saveDrawingHistory(userId: string, artId: string, save: HistorySave): Promise<{ head: number }> {
-  const where = drawingOf(userId, artId)
-
-  return useDb().transaction(async (tx) => {
-    await tx.insert(coloringDrawings).values({ userId, artId }).onConflictDoNothing()
-    const [row] = await tx
-      .select({
-        baseSeq: coloringDrawings.baseSeq,
-        ops: coloringDrawings.ops,
-        startedAt: coloringDrawings.startedAt,
-        completedAt: coloringDrawings.completedAt
-      })
-      .from(coloringDrawings)
-      .where(where)
-      .for('update')
-    if (!row) throw createError({ statusCode: 500, message: 'Не удалось сохранить рисунок' })
-
+export function saveDrawingHistory(userId: string, artId: string, save: HistorySave): Promise<{ head: number }> {
+  return withLockedDrawing(userId, artId, ['baseSeq', 'ops', 'startedAt', 'completedAt'], async (tx, row, where) => {
     // Клиент опирается на операции, которых у сервера нет (или они уже в базе) —
     // он пришлёт базовое изображение и повторит
     const head = row.baseSeq + row.ops.length
@@ -74,18 +80,8 @@ export async function saveDrawingHistory(userId: string, artId: string, save: Hi
 
 // Новое базовое изображение: всё до seq теперь в нём. Операции сервера после seq сохраняются —
 // их перезапишет следующее сохранение истории. image = null — база пустая (seq = 0)
-export async function saveDrawingBase(userId: string, artId: string, seq: number, image: Buffer | null): Promise<{ head: number }> {
-  const where = drawingOf(userId, artId)
-
-  return useDb().transaction(async (tx) => {
-    await tx.insert(coloringDrawings).values({ userId, artId }).onConflictDoNothing()
-    const [row] = await tx
-      .select({ baseSeq: coloringDrawings.baseSeq, ops: coloringDrawings.ops, cursor: coloringDrawings.cursor })
-      .from(coloringDrawings)
-      .where(where)
-      .for('update')
-    if (!row) throw createError({ statusCode: 500, message: 'Не удалось сохранить рисунок' })
-
+export function saveDrawingBase(userId: string, artId: string, seq: number, image: Buffer | null): Promise<{ head: number }> {
+  return withLockedDrawing(userId, artId, ['baseSeq', 'ops', 'cursor'], async (tx, row, where) => {
     const head = row.baseSeq + row.ops.length
     // Если сервер знает операции после seq — оставляем их, иначе журнал начинается с базы
     const ops = seq >= row.baseSeq && seq <= head ? row.ops.slice(seq - row.baseSeq) : []

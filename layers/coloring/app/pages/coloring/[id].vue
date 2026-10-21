@@ -13,7 +13,7 @@ const { data: art, error, suspense } = useArtQuery(id)
 if (import.meta.server || !art.value) await suspense().catch(() => undefined)
 
 if (error.value) {
-  const statusCode = (error.value as { statusCode?: number }).statusCode ?? 500
+  const statusCode = errorStatus(error.value) ?? 500
   throw createError({
     statusCode,
     statusMessage: statusCode === 404 ? 'Раскраска не найдена' : 'Не удалось загрузить раскраску',
@@ -63,10 +63,10 @@ async function onCamera() {
   }
 }
 
-// Галерея покажет новый прогресс
+// Галерея покажет новый прогресс — обновится только страница с этим артом
 onBeforeUnmount(() => {
   clearTimeout(celebrateTimer)
-  queryClient.invalidateQueries({ queryKey: ['coloring'] })
+  invalidateArt(queryClient, id.value)
 })
 </script>
 
@@ -316,9 +316,7 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  border: $frame-border solid $color-frame;
-  border-radius: $frame-radius;
-  background: #fff;
+  @include frame-card;
 
   @include desktop {
     --history-size: 74.58px;

@@ -8,10 +8,7 @@ export default defineNuxtPlugin((nuxtApp) => {
       // Сессия истекла, пока игрок был на странице, — возвращаем на вход
       onError: (error) => {
         if (import.meta.server || errorStatus(error) !== 401) return
-        nuxtApp.runWithContext(() => {
-          useAuthStore().forget()
-          return navigateTo('/login')
-        })
+        nuxtApp.runWithContext(() => useAuthStore().expire())
       }
     }),
     defaultOptions: {

@@ -1,6 +1,5 @@
 export default defineNuxtPlugin(() => {
-  const isTouch = window.matchMedia('(pointer: coarse)').matches
-  if (!isTouch) return
+  if (!isTouchDevice()) return
 
   const prevent = (event: Event) => event.preventDefault()
 

@@ -2,14 +2,39 @@
 import { useQueryClient } from '@tanstack/vue-query'
 import type { GalleryArt } from '../../../shared/gallery'
 
-const props = defineProps<{ art: GalleryArt }>()
-defineEmits<{ delete: [] }>()
+const props = defineProps<{ art: GalleryArt, deleting?: boolean }>()
+const emit = defineEmits<{ delete: [] }>()
 
-// Рисунок начинает грузиться в момент нажатия — пока идёт переход, ответ уже в пути
+// Удаление — в два нажатия: детям легко задеть крестик случайно
+const confirming = ref(false)
+
+// Рисунок начинает грузиться ещё до перехода — пока идёт переход, ответ уже в пути.
+// Не сразу на касание: в ленте экранов касание часто начинает свайп, и браузер тогда присылает
+// pointercancel. Поэтому — через PREFETCH_HOLD_MS удержания или на отпускании, что раньше
+const PREFETCH_HOLD_MS = 100
 const queryClient = useQueryClient()
+let prefetchTimer: ReturnType<typeof setTimeout> | undefined
+
 function prefetch() {
+  cancelPrefetch()
   fetchDrawing(queryClient, props.art).catch(() => {})
 }
+
+function startPrefetch() {
+  cancelPrefetch()
+  prefetchTimer = setTimeout(prefetch, PREFETCH_HOLD_MS)
+}
+
+function cancelPrefetch() {
+  clearTimeout(prefetchTimer)
+  prefetchTimer = undefined
+}
+
+function flushPrefetch() {
+  if (prefetchTimer) prefetch()
+}
+
+onBeforeUnmount(cancelPrefetch)
 
 // Свежий рисунок из этой вкладки показываем сразу, не дожидаясь ответа сервера
 const previews = useDrawingPreviews()
@@ -27,7 +52,9 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
       class="art-card__link"
       :to="`/coloring/${art.id}`"
       :aria-label="`${art.title}, ${Math.floor(progress)}%`"
-      @pointerdown="prefetch"
+      @pointerdown="startPrefetch"
+      @pointerup="flushPrefetch"
+      @pointercancel="cancelPrefetch"
       @keydown.enter="prefetch"
     >
       <span class="art-card__art">
@@ -47,36 +74,64 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
       <ColoringProgressFrame :progress="progress" />
     </NuxtLink>
     <button
-      v-if="art.own"
+      v-if="art.own && !confirming"
       type="button"
       class="art-card__delete"
       :aria-label="`Удалить «${art.title}»`"
-      @click="$emit('delete')"
+      @click="confirming = true"
     >
       <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
         <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
       </svg>
     </button>
+    <Transition name="art-card-confirm">
+      <div v-if="confirming" class="art-card__confirm" role="group" :aria-label="`Удалить «${art.title}»?`">
+        <span class="art-card__question">Удалить?</span>
+        <span class="art-card__answers">
+          <button
+            type="button"
+            class="art-card__answer art-card__answer--yes"
+            aria-label="Да, удалить"
+            :disabled="deleting"
+            @click="emit('delete')"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="art-card__answer"
+            aria-label="Нет, оставить"
+            :disabled="deleting"
+            @click="confirming = false"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" />
+            </svg>
+          </button>
+        </span>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <style scoped lang="scss">
 .art-card {
   position: relative;
-  height: 200px;
+  height: $card-height;
 }
 
 .art-card__link {
   position: relative;
   display: block;
   height: 100%;
-  border: $frame-border solid $color-frame;
-  border-radius: $frame-radius;
-  background: #fff;
+  @include frame-card;
   transition: transform 0.15s;
+  @include pressable;
 
-  &:active {
-    transform: scale(0.96);
+  &:focus-visible {
+    @include frame-focus;
   }
 }
 
@@ -123,9 +178,59 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
   background: $color-accent;
   color: #fff;
   transition: transform 0.1s;
+  @include pressable(0.9);
+}
 
-  &:active {
-    transform: scale(0.9);
+.art-card__confirm {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  @include frame-card;
+  background: rgba(#fff, 0.92);
+}
+
+.art-card__question {
+  color: $color-ink;
+  font-family: $font-display;
+  font-size: 28px;
+}
+
+.art-card__answers {
+  display: flex;
+  gap: 16px;
+}
+
+.art-card__answer {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: $color-frame;
+  color: $color-ink;
+  transition: transform 0.1s, opacity 0.15s;
+  @include pressable(0.9);
+
+  &:disabled {
+    opacity: 0.5;
   }
+}
+
+.art-card__answer--yes {
+  @include accent-button(4px);
+}
+
+.art-card-confirm-enter-active,
+.art-card-confirm-leave-active {
+  transition: opacity 0.15s;
+}
+
+.art-card-confirm-enter-from,
+.art-card-confirm-leave-to {
+  opacity: 0;
 }
 </style>

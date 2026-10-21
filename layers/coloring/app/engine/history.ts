@@ -94,7 +94,7 @@ export class ColoringHistory {
     this.ops.length = seq - this.baseSeq
     this.generation++
     this.truncatedTo = Math.min(this.truncatedTo, seq)
-    for (const key of [...this.snapshots.keys()]) if (key > seq) this.snapshots.delete(key)
+    this.dropSnapshots(key => key > seq)
   }
 
   // Восстановить на движке ближайшее сохранённое состояние не новее target; вернуть его номер
@@ -118,6 +118,10 @@ export class ColoringHistory {
     } catch {
       return false
     }
+  }
+
+  private dropSnapshots(drop: (seq: number) => boolean) {
+    for (const seq of [...this.snapshots.keys()]) if (drop(seq)) this.snapshots.delete(seq)
   }
 
   private latestSnapshot(limit: number): number {
@@ -159,7 +163,7 @@ export class ColoringHistory {
       this.ops = this.ops.slice(seq - this.baseSeq)
       this.baseSeq = seq
       this.baseImage = image
-      for (const key of [...this.snapshots.keys()]) if (key < seq) this.snapshots.delete(key)
+      this.dropSnapshots(key => key < seq)
       this.options.onBase(seq, image)
     } catch {
       // Не получилось — попробуем при следующем действии

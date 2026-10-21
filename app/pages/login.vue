@@ -18,11 +18,7 @@ onMounted(() => {
 async function submit() {
   if (pending.value) return
   error.value = ''
-  if (!isCountryCode(country.value)) {
-    error.value = 'Выбери страну'
-    return
-  }
-  const problem = validateUsername(username.value)
+  const problem = validateLogin(country.value, username.value)
   if (problem) {
     error.value = problem
     return
@@ -96,9 +92,7 @@ async function submit() {
   max-width: 560px;
   margin: auto;
   padding: 24px 32px;
-  border: $frame-border solid $color-frame;
-  border-radius: $frame-radius;
-  background: #fff;
+  @include frame-card;
   text-align: center;
 
   @media (max-width: 479px) {
@@ -132,21 +126,12 @@ async function submit() {
 }
 
 .login__field {
-  width: 100%;
+  @include text-field;
   min-width: 0;
-  height: 56px;
-  padding: 0 20px;
-  border: 4px solid $color-frame;
-  border-radius: 24px;
   outline: none;
-  background: #fff;
-  color: $color-ink;
-  // Не меньше 16px — иначе iOS зумит страницу при фокусе
-  font: 500 20px/1 $font-body;
-  transition: border-color 0.15s;
 
   &::placeholder {
-    color: rgba($color-ink, 0.4);
+    color: $color-placeholder;
   }
 
   &:focus {
@@ -165,9 +150,7 @@ async function submit() {
 .login__submit {
   height: 60px;
   border-radius: 24px;
-  background: $color-accent;
-  box-shadow: 0 6px 0 $color-accent-shadow;
-  color: #fff;
+  @include accent-button(6px);
   font-size: 24px;
   font-weight: 700;
   margin-bottom: 6px;

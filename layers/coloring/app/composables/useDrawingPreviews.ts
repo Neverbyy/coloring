@@ -23,5 +23,12 @@ export function useDrawingPreviews() {
     if (previous) URL.revokeObjectURL(previous.thumbnail)
   }
 
-  return { get, set }
+  function remove(artId: string) {
+    const previous = previews.get(key(artId))
+    if (!previous) return
+    previews.delete(key(artId))
+    URL.revokeObjectURL(previous.thumbnail)
+  }
+
+  return { get, set, remove }
 }

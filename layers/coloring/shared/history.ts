@@ -99,6 +99,10 @@ function toPoint(value: unknown): [number, number] | null {
     : null
 }
 
+function isIndex(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
 // Проверка операции из недоверенного источника. Возвращает чистый объект без лишних полей
 export function parseHistoryOp(value: unknown): HistoryOp | null {
   if (!value || typeof value !== 'object') return null
@@ -127,4 +131,22 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
   }
 
   return null
+}
+
+// Тело сохранения истории из недоверенного источника: готовый объект или текст ошибки
+export function parseHistorySave(value: unknown): HistorySave | string {
+  const body = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const { fromSeq, cursor, progress } = body
+  if (!isIndex(fromSeq) || !isIndex(cursor)) return 'Неверная позиция истории'
+  if (!Array.isArray(body.ops) || body.ops.length > MAX_STORED_OPS) return 'Неверный список действий'
+  const ops: HistoryOp[] = []
+  for (const item of body.ops) {
+    const op = parseHistoryOp(item)
+    if (!op) return 'Неверное действие в истории'
+    ops.push(op)
+  }
+  if (typeof progress !== 'number' || !Number.isFinite(progress) || progress < 0 || progress > 100) {
+    return 'Неверный процент заполнения'
+  }
+  return { fromSeq, ops, cursor, progress }
 }

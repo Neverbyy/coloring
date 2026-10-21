@@ -1,4 +1,5 @@
 import type { StrokeTool } from '../../shared/history'
+import { context2d, createCanvas } from './canvas'
 
 export interface ToolStyle {
   // Толщина линии в точках рисунка (длинная сторона — 1024)
@@ -34,10 +35,8 @@ function mulberry32(seed: number) {
 
 // Маска зерна: прозрачность каждой точки случайна, цвет не важен (используется как destination-in)
 export function createGrainPattern(context: CanvasRenderingContext2D): CanvasPattern {
-  const tile = document.createElement('canvas')
-  tile.width = GRAIN_SIZE
-  tile.height = GRAIN_SIZE
-  const tileContext = tile.getContext('2d')!
+  const tile = createCanvas(GRAIN_SIZE, GRAIN_SIZE)
+  const tileContext = context2d(tile)
   const image = tileContext.createImageData(GRAIN_SIZE, GRAIN_SIZE)
   const random = mulberry32(20261020)
 

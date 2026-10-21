@@ -10,6 +10,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
   uuid
 } from 'drizzle-orm/pg-core'
 import { users } from '../../../../server/db/schema'
@@ -33,9 +34,17 @@ export const coloringArts = pgTable('coloring_arts', {
   // Порядок в галерее; при равенстве — по дате добавления
   sortOrder: integer('sort_order').notNull().default(0),
   published: boolean('published').notNull().default(true),
+  // Импортированный арт — виден только владельцу; null — общий
+  ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+  // Подготовленный к раскраске SVG (контур: белые области, чёрные линии); у общих PNG-артов — null
+  svg: text('svg'),
+  // SHA-256 подготовленного SVG: один и тот же рисунок у игрока не повторяется (уникальный индекс)
+  svgHash: text('svg_hash'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 }, table => [
-  index('coloring_arts_gallery_idx').on(table.published, table.sortOrder, table.createdAt)
+  index('coloring_arts_gallery_idx').on(table.published, table.sortOrder, table.createdAt),
+  index('coloring_arts_owner_idx').on(table.ownerId, table.createdAt),
+  uniqueIndex('coloring_arts_owner_svg_idx').on(table.ownerId, table.svgHash)
 ]).enableRLS()
 
 // Рисунок игрока — одна строка на пару «игрок + арт». Базовое изображение (PNG) хранит всё,

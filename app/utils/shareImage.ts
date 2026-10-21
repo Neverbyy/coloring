@@ -3,9 +3,8 @@
 // На компьютере и где «Поделиться» с файлами нет — скачивание файла
 export async function shareImage(image: Blob, title: string): Promise<void> {
   const file = new File([image], `${title}.png`, { type: 'image/png' })
-  const touch = window.matchMedia('(pointer: coarse)').matches
 
-  if (touch && navigator.canShare?.({ files: [file] })) {
+  if (isTouchDevice() && navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title })
       return

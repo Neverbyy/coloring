@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool } from '../../stores/coloringTools'
+import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool, type DrawingTool } from '../../stores/coloringTools'
 
 const store = useColoringToolsStore()
 const { tool, color, recentColors, paletteOpen } = storeToRefs(store)
@@ -54,7 +54,7 @@ watch(() => recentColors.value.length, () => {
 const tools = computed<ColoringTool[]>(() => [tool.value, ...COLORING_TOOLS.filter(item => item !== tool.value)])
 
 // Цвета показываются тем предметом, которым рисуют: кисточками или карандашами
-const colorKind = computed<Exclude<ColoringTool, 'eraser'>>(() => tool.value === 'brush' ? 'brush' : 'pencil')
+const colorKind = computed<DrawingTool>(() => tool.value === 'brush' ? 'brush' : 'pencil')
 
 // Порядок в DOM — от конца панели (список *-reverse): активный, недавние, затем вся палитра.
 // В открытой палитре места хватает — недавние показываем все. У резинки цвета нет — список пуст

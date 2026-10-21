@@ -26,12 +26,19 @@ export const useAuthStore = defineStore('auth', () => {
     forget()
   }
 
-  // Сессия закончилась на сервере (ответ 401)
+  // Забыть игрока в этой вкладке (выход, смена игрока)
   function forget() {
     nuxtApp.$queryClient.clear()
     user.value = null
     loaded.value = true
   }
 
-  return { user, loaded, fetchUser, login, logout, forget }
+  // Сессия закончилась на сервере (ответ 401): забыть игрока и вернуть на вход.
+  // Одно место для всех запросов — галереи, холста, автосохранения
+  function expire() {
+    forget()
+    return nuxtApp.runWithContext(() => navigateTo('/login'))
+  }
+
+  return { user, loaded, fetchUser, login, logout, forget, expire }
 })
