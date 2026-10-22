@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { paperGeometry } from '../../../../shared/history'
-import type { SegmentMap } from '../../../engine/segmentation'
+import { paperGeometry } from '#layers/coloring/shared/history'
+import type { SegmentMap } from '#layers/coloring/app/engine/segmentation'
 
 const props = defineProps<{ image: string, width: number, height: number }>()
 const emit = defineEmits<{ analyzed: [areas: number] }>()

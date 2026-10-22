@@ -1,1 +1,1 @@
-export { PALETTE, paletteColorName, type PaletteColor } from '../../shared/palette'
+export { PALETTE, paletteColorName, type PaletteColor } from '#layers/coloring/shared/palette'

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
-import { artApiPath } from '../../../shared/gallery'
-import { COLORING_SOUNDS } from '../../../shared/sounds'
-import type { SyncStatus } from '../../engine/sync'
+import { artApiPath } from '#layers/coloring/shared/gallery'
+import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
+import type { SyncStatus } from '#layers/coloring/app/engine/sync'
 
 const route = useRoute()
 const tools = useColoringToolsStore()

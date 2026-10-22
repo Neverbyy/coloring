@@ -1,4 +1,4 @@
-import { coloringArtOpens } from '../../../../db/schema'
+import { coloringArtOpens } from '#layers/coloring/server/db/schema'
 
 export default defineEventHandler(async (event) => {
   const { user, artId } = await requireDrawingRequest(event)

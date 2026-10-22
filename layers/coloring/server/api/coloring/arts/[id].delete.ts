@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { coloringArts } from '../../../db/schema'
+import { coloringArts } from '#layers/coloring/server/db/schema'
 
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)

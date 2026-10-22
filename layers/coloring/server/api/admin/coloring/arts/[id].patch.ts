@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
-import { MAX_ART_TITLE } from '../../../../../shared/gallery'
-import type { AdminArtDetails } from '../../../../../shared/admin'
-import { coloringArts } from '../../../../db/schema'
+import { MAX_ART_TITLE } from '#layers/coloring/shared/gallery'
+import type { AdminArtDetails } from '#layers/coloring/shared/admin'
+import { coloringArts } from '#layers/coloring/server/db/schema'
 
 function badRequest(message: string): never {
   throw createError({ statusCode: 400, message })

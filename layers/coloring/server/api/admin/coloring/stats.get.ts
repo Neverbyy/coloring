@@ -1,6 +1,6 @@
 import { and, isNotNull, isNull } from 'drizzle-orm'
-import { STATS_PERIODS, type ColoringStats, type StatsPeriod } from '../../../../shared/admin'
-import { coloringArts } from '../../../db/schema'
+import { STATS_PERIODS, type ColoringStats, type StatsPeriod } from '#layers/coloring/shared/admin'
+import { coloringArts } from '#layers/coloring/server/db/schema'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 

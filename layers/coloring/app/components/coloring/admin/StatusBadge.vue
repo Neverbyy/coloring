@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ArtStatus } from '../../../../shared/admin'
+import type { ArtStatus } from '#layers/coloring/shared/admin'
 
 defineProps<{ status: ArtStatus }>()
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { MAX_ART_TITLE } from '../../../../../shared/gallery'
-import { adminArtApiPath, type AdminArtDetails, type AdminArtPatch, type ArtAudience, type AudienceUpdate } from '../../../../../shared/admin'
+import { MAX_ART_TITLE } from '#layers/coloring/shared/gallery'
+import { adminArtApiPath, type AdminArtDetails, type AdminArtPatch, type ArtAudience, type AudienceUpdate } from '#layers/coloring/shared/admin'
 
 const route = useRoute()
 const id = computed(() => String(route.params.id))

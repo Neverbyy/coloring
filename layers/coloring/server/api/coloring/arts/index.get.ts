@@ -1,4 +1,4 @@
-import { GALLERY_PAGE_SIZE, type GalleryPage } from '../../../../shared/gallery'
+import { GALLERY_PAGE_SIZE, type GalleryPage } from '#layers/coloring/shared/gallery'
 
 export default defineEventHandler(async (event): Promise<GalleryPage> => {
   const user = await requireUser(event)

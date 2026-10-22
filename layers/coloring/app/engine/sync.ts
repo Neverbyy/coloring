@@ -1,6 +1,6 @@
 import { errorStatus } from '~/utils/httpError'
-import { artApiPath } from '../../shared/gallery'
-import type { DrawingState, HistoryConflict, HistoryOp, HistorySave } from '../../shared/history'
+import { artApiPath } from '#layers/coloring/shared/gallery'
+import type { DrawingState, HistoryConflict, HistoryOp, HistorySave } from '#layers/coloring/shared/history'
 import { readStorage, removeStorage, writeStorage } from '~/utils/storage'
 
 export function pendingStorageKey(userId: string, artId: string): string {

@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/vue-query'
-import { ARTS_API, IMPORT_MESSAGES, artApiPath, type GalleryArt, type ImportResult } from '../../shared/gallery'
-import { paperGeometry } from '../../shared/history'
-import { forgetPending, pendingStorageKey } from '../engine/sync'
+import { ARTS_API, IMPORT_MESSAGES, artApiPath, type GalleryArt, type ImportResult } from '#layers/coloring/shared/gallery'
+import { paperGeometry } from '#layers/coloring/shared/history'
+import { forgetPending, pendingStorageKey } from '#layers/coloring/app/engine/sync'
 
 const MESSAGES = {
   ...IMPORT_MESSAGES,

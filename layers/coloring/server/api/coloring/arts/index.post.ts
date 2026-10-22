@@ -1,6 +1,6 @@
 import { count, eq } from 'drizzle-orm'
-import { MAX_OWN_ARTS, type ImportResult } from '../../../../shared/gallery'
-import { coloringArts } from '../../../db/schema'
+import { MAX_OWN_ARTS, type ImportResult } from '#layers/coloring/shared/gallery'
+import { coloringArts } from '#layers/coloring/server/db/schema'
 
 export default defineEventHandler(async (event): Promise<ImportResult> => {
   const user = await requireUser(event)

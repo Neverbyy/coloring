@@ -1,4 +1,4 @@
-import type { AdminPlayer } from '../../../shared/types/admin'
+import type { AdminPlayer } from '#shared/types/admin'
 
 export const ADMIN_ARTS_API = '/api/admin/coloring/arts'
 

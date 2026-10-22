@@ -1,7 +1,7 @@
 import { and, desc, eq, isNotNull, max, or, sql } from 'drizzle-orm'
-import { users } from '../../../../../../../../server/db/schema'
-import { adminDrawingApiPath, type AdminDrawing } from '../../../../../../shared/admin'
-import { coloringArtOpens, coloringArts, coloringDrawings } from '../../../../../db/schema'
+import { users } from '~~/server/db/schema'
+import { adminDrawingApiPath, type AdminDrawing } from '#layers/coloring/shared/admin'
+import { coloringArtOpens, coloringArts, coloringDrawings } from '#layers/coloring/server/db/schema'
 
 function toIso(value: Date | string | null | undefined): string | null {
   return value ? new Date(value).toISOString() : null

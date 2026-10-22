@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, exists, isNull, or, sql } from 'drizzle-orm'
-import { coloringArtCountries, coloringArtOpens, coloringArtUsers, coloringArts, coloringDrawings } from '../db/schema'
+import { coloringArtCountries, coloringArtOpens, coloringArtUsers, coloringArts, coloringDrawings } from '#layers/coloring/server/db/schema'
 import type { H3Event } from 'h3'
-import { artApiPath, type GalleryArt } from '../../shared/gallery'
+import { artApiPath, type GalleryArt } from '#layers/coloring/shared/gallery'
 
 export function artNotFound() {
   return createError({ statusCode: 404, message: 'Раскраска не найдена' })

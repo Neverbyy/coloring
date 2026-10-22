@@ -1,4 +1,4 @@
-import type { StrokeTool } from '../../shared/history'
+import type { StrokeTool } from '#layers/coloring/shared/history'
 import { context2d, createCanvas } from './canvas'
 
 export interface ToolStyle {

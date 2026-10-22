@@ -1,4 +1,4 @@
-import type { DrawingState } from '../../../../../shared/history'
+import type { DrawingState } from '#layers/coloring/shared/history'
 
 export default defineEventHandler(async (event): Promise<DrawingState> => {
   const { user, artId } = await requireDrawingRequest(event)

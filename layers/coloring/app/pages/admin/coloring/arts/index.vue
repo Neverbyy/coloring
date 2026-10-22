@@ -6,7 +6,7 @@ import {
   type AdminArtPage,
   type AdminArtUpload,
   type ArtStatusFilter
-} from '../../../../../shared/admin'
+} from '#layers/coloring/shared/admin'
 
 useHead({ title: 'Раскраски' })
 

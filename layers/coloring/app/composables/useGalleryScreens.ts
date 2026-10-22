@@ -1,4 +1,4 @@
-import type { GalleryArt, GalleryPage } from '../../shared/gallery'
+import type { GalleryArt, GalleryPage } from '#layers/coloring/shared/gallery'
 
 const SWIPE_QUERY = '(max-width: 680px)'
 

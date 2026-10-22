@@ -1,4 +1,4 @@
-import type { StrokeTool } from '../../shared/history'
+import type { StrokeTool } from '#layers/coloring/shared/history'
 
 export type ColoringTool = StrokeTool
 export type DrawingTool = Exclude<ColoringTool, 'eraser'>

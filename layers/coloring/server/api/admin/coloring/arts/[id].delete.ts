@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import { coloringArts } from '../../../../db/schema'
+import { coloringArts } from '#layers/coloring/server/db/schema'
 
 export default defineAdminHandler(async (event) => {
   const id = artIdParam(event)

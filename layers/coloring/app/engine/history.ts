@@ -1,4 +1,4 @@
-import { BAKE_CHUNK, HISTORY_LIMIT, SNAPSHOT_INTERVAL, type HistoryOp } from '../../shared/history'
+import { BAKE_CHUNK, HISTORY_LIMIT, SNAPSHOT_INTERVAL, type HistoryOp } from '#layers/coloring/shared/history'
 import type { ColoringEngine } from './engine'
 
 export interface HistoryState {

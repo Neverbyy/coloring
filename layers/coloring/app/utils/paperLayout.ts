@@ -1,4 +1,4 @@
-import { paperGeometry } from '../../shared/history'
+import { paperGeometry } from '#layers/coloring/shared/history'
 
 export function paperLayout(artWidth: number, artHeight: number) {
   const { width, height, art } = paperGeometry(artWidth, artHeight)

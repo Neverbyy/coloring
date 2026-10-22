@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
-import { coloringDrawings } from '../db/schema'
-import { MAX_STORED_OPS, type DrawingState, type HistoryConflict, type HistorySave } from '../../shared/history'
+import { coloringDrawings } from '#layers/coloring/server/db/schema'
+import { MAX_STORED_OPS, type DrawingState, type HistoryConflict, type HistorySave } from '#layers/coloring/shared/history'
 
 function drawingOf(userId: string, artId: string) {
   return and(eq(coloringDrawings.userId, userId), eq(coloringDrawings.artId, artId))

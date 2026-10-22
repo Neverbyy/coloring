@@ -1,7 +1,7 @@
 import { eq, inArray } from 'drizzle-orm'
-import { users } from '../../../../../../../../server/db/schema'
-import type { AdminArtDetails } from '../../../../../../shared/admin'
-import { coloringArtCountries, coloringArtUsers, coloringArts } from '../../../../../db/schema'
+import { users } from '~~/server/db/schema'
+import type { AdminArtDetails } from '#layers/coloring/shared/admin'
+import { coloringArtCountries, coloringArtUsers, coloringArts } from '#layers/coloring/server/db/schema'
 
 const MAX_PLAYERS = 1000
 

@@ -1,4 +1,4 @@
-import { MAX_STROKE_POINTS, type HistoryOp, type StrokeOp, type StrokeTool } from '../../shared/history'
+import { MAX_STROKE_POINTS, type HistoryOp, type StrokeOp, type StrokeTool } from '#layers/coloring/shared/history'
 import type { Box, Segment, SegmentMap } from './segmentation'
 import { context2d, createCanvas } from './canvas'
 import { TOOL_STYLES, createPencilTexture } from './textures'

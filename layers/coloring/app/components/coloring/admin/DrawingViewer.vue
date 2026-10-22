@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { adminDrawingApiPath, type AdminDrawing } from '../../../../shared/admin'
-import { paperGeometry, type DrawingState } from '../../../../shared/history'
-import { ColoringEngine } from '../../../engine/engine'
+import { adminDrawingApiPath, type AdminDrawing } from '#layers/coloring/shared/admin'
+import { paperGeometry, type DrawingState } from '#layers/coloring/shared/history'
+import { ColoringEngine } from '#layers/coloring/app/engine/engine'
 
 const props = defineProps<{ userId: string, drawing: AdminDrawing }>()
 const emit = defineEmits<{ close: [] }>()

@@ -1,6 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import type { AdminArtUpload } from '../../../../../shared/admin'
-import { coloringArts } from '../../../../db/schema'
+import type { AdminArtUpload } from '#layers/coloring/shared/admin'
+import { coloringArts } from '#layers/coloring/server/db/schema'
 
 export default defineAdminHandler(async (event): Promise<AdminArtUpload> => {
   const upload = await readSvgUpload(event, 'Новая раскраска')

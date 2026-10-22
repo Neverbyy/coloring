@@ -1,4 +1,4 @@
-import { MAX_IMAGE_BYTES } from '../../../../../../shared/history'
+import { MAX_IMAGE_BYTES } from '#layers/coloring/shared/history'
 
 export default defineEventHandler(async (event) => {
   const { user, artId } = await requireDrawingRequest(event)

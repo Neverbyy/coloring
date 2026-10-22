@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool, type DrawingTool } from '../../stores/coloringTools'
+import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool, type DrawingTool } from '#layers/coloring/app/stores/coloringTools'
 
 const store = useColoringToolsStore()
 const { tool, color, recentColors, paletteOpen } = storeToRefs(store)

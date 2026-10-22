@@ -1,4 +1,4 @@
-import { IMPORT_MESSAGES, MAX_SVG_BYTES } from '../../shared/gallery'
+import { IMPORT_MESSAGES, MAX_SVG_BYTES } from '#layers/coloring/shared/gallery'
 
 export function svgFileProblem(file: File): string | null {
   const isSvg = /\.svg$/i.test(file.name) || file.type === 'image/svg+xml'

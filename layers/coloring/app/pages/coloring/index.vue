@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GalleryArt } from '../../../shared/gallery'
+import type { GalleryArt } from '#layers/coloring/shared/gallery'
 
 useHead({ title: 'Галерея — Раскраска' })
 

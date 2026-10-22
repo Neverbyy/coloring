@@ -1,6 +1,6 @@
 import { optimize, type CustomPlugin, type XastElement, type XastRoot } from 'svgo'
-import { IMPORT_MESSAGES, MAX_ART_TITLE, MAX_SVG_BYTES } from '../../shared/gallery'
-import { WORK_SIZE } from '../../shared/history'
+import { IMPORT_MESSAGES, MAX_ART_TITLE, MAX_SVG_BYTES } from '#layers/coloring/shared/gallery'
+import { WORK_SIZE } from '#layers/coloring/shared/history'
 
 export interface SvgArt {
   svg: string

@@ -1,6 +1,6 @@
-import type { PaperGeometry } from '../../shared/history'
-import { context2d, createCanvas } from '../engine/canvas'
-import { buildSegmentMap, type SegmentMap } from '../engine/segmentation'
+import type { PaperGeometry } from '#layers/coloring/shared/history'
+import { context2d, createCanvas } from '#layers/coloring/app/engine/canvas'
+import { buildSegmentMap, type SegmentMap } from '#layers/coloring/app/engine/segmentation'
 
 export function segmentArt(image: HTMLImageElement, paper: PaperGeometry): SegmentMap {
   const { width, height, art } = paper

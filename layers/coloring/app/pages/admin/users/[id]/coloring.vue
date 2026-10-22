@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useQuery } from '@tanstack/vue-query'
-import type { AdminDrawing } from '../../../../../shared/admin'
+import type { AdminDrawing } from '#layers/coloring/shared/admin'
 
 const route = useRoute()
 const userId = computed(() => String(route.params.id))

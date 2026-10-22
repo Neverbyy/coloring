@@ -1,6 +1,6 @@
 import { keepPreviousData, useInfiniteQuery, useQuery, useQueryClient, type InfiniteData, type QueryClient } from '@tanstack/vue-query'
-import { ARTS_API, artApiPath, type GalleryArt, type GalleryPage } from '../../shared/gallery'
-import type { DrawingState } from '../../shared/history'
+import { ARTS_API, artApiPath, type GalleryArt, type GalleryPage } from '#layers/coloring/shared/gallery'
+import type { DrawingState } from '#layers/coloring/shared/history'
 
 export const galleryKeys = {
   all: ['coloring', 'gallery'] as const,

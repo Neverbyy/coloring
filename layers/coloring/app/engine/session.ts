@@ -1,4 +1,4 @@
-import type { DrawingState, HistoryOp } from '../../shared/history'
+import type { DrawingState, HistoryOp } from '#layers/coloring/shared/history'
 import { ColoringEngine } from './engine'
 import { ColoringHistory } from './history'
 import type { SegmentMap } from './segmentation'

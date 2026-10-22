@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
-import type { GalleryArt } from '../../../shared/gallery'
-import { paperGeometry, type HistoryOp, type StrokeTool } from '../../../shared/history'
-import { COLORING_SOUNDS } from '../../../shared/sounds'
-import { DrawingSession } from '../../engine/session'
-import { pendingStorageKey, type SyncStatus } from '../../engine/sync'
+import type { GalleryArt } from '#layers/coloring/shared/gallery'
+import { paperGeometry, type HistoryOp, type StrokeTool } from '#layers/coloring/shared/history'
+import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
+import { DrawingSession } from '#layers/coloring/app/engine/session'
+import { pendingStorageKey, type SyncStatus } from '#layers/coloring/app/engine/sync'
 
 const props = defineProps<{ art: GalleryArt }>()
 const emit = defineEmits<{

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
-import type { GalleryArt } from '../../../shared/gallery'
+import type { GalleryArt } from '#layers/coloring/shared/gallery'
 
 const props = defineProps<{ art: GalleryArt, deleting?: boolean }>()
 const emit = defineEmits<{ delete: [] }>()

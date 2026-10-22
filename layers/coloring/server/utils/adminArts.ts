@@ -1,7 +1,7 @@
 import { and, asc, count, countDistinct, desc, eq, gte, inArray, isNull, sql, type AnyColumn, type SQL } from 'drizzle-orm'
 import type { H3Event } from 'h3'
-import { users } from '../../../../server/db/schema'
-import { coloringArtCountries, coloringArtOpens, coloringArtUsers, coloringArts, coloringDrawings } from '../db/schema'
+import { users } from '~~/server/db/schema'
+import { coloringArtCountries, coloringArtOpens, coloringArtUsers, coloringArts, coloringDrawings } from '#layers/coloring/server/db/schema'
 import {
   ADMIN_ARTS_PAGE_SIZE,
   adminArtApiPath,
@@ -11,7 +11,7 @@ import {
   type ArtCounts,
   type ArtStatus,
   type ArtStatusFilter
-} from '../../shared/admin'
+} from '#layers/coloring/shared/admin'
 
 export function artStatus(published: boolean, publishedAt: Date | null): ArtStatus {
   return published ? 'published' : publishedAt ? 'hidden' : 'draft'

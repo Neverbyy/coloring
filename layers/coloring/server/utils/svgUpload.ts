@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { H3Event } from 'h3'
-import { IMPORT_MESSAGES, MAX_SVG_BYTES, artApiPath } from '../../shared/gallery'
+import { IMPORT_MESSAGES, MAX_SVG_BYTES, artApiPath } from '#layers/coloring/shared/gallery'
 
 export interface SvgUpload {
   values: {

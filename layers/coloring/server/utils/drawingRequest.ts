@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
-import { coloringArts } from '../db/schema'
+import { coloringArts } from '#layers/coloring/server/db/schema'
 
 export async function requireDrawingRequest(event: H3Event): Promise<{ user: SessionUser, artId: string }> {
   const user = await requireUser(event)

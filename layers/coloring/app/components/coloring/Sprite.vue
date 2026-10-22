@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ColoringTool } from '../../stores/coloringTools'
+import type { ColoringTool } from '#layers/coloring/app/stores/coloringTools'
 
 withDefaults(defineProps<{
   kind: ColoringTool
