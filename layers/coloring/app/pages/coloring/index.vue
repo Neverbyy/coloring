@@ -121,6 +121,7 @@ async function onDelete(art: GalleryArt) {
     </nav>
 
     <div class="gallery__toolbar">
+      <ColoringLogoutButton />
       <MusicToggle />
     </div>
 
@@ -168,6 +169,8 @@ $toolbar-gap: 20px;
   top: $toolbar-y;
   left: max($gap, env(safe-area-inset-left));
   z-index: 5;
+  display: flex;
+  gap: 12px;
 }
 
 .gallery__content {
