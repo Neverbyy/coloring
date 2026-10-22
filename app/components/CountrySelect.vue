@@ -20,6 +20,7 @@ const GAP = 6
 const MAX_HEIGHT = 320
 const MIN_WIDTH = 280
 const MIN_SPACE = 220
+const TAP_SLOP = 10
 
 const id = useId()
 const trigger = ref<HTMLButtonElement | null>(null)
@@ -49,6 +50,7 @@ const filtered = computed(() => {
 
 watch(filtered, () => {
   activeIndex.value = filtered.value.length ? 0 : -1
+  if (list.value) list.value.scrollTop = 0
 })
 
 function optionId(index: number) {
@@ -58,19 +60,22 @@ function optionId(index: number) {
 function place() {
   if (!trigger.value) return
   const rect = trigger.value.getBoundingClientRect()
-  const viewportHeight = window.visualViewport?.height ?? window.innerHeight
+  const visibleTop = window.visualViewport?.offsetTop ?? 0
+  const visibleBottom = visibleTop + (window.visualViewport?.height ?? window.innerHeight)
   const viewportWidth = window.innerWidth
-  const below = viewportHeight - rect.bottom - MARGIN - GAP
-  const above = rect.top - MARGIN - GAP
   const width = Math.min(Math.max(rect.width, MIN_WIDTH), viewportWidth - 2 * MARGIN)
   const left = Math.min(Math.max(rect.left, MARGIN), viewportWidth - width - MARGIN)
   const horizontal = { left: `${left}px`, width: `${width}px` }
+  const downTop = Math.max(rect.bottom + GAP, visibleTop + MARGIN)
+  const upBottom = Math.min(rect.top - GAP, visibleBottom - MARGIN)
+  const below = visibleBottom - MARGIN - downTop
+  const above = upBottom - visibleTop - MARGIN
 
   if (Math.max(below, above) < MIN_SPACE) {
-    const height = Math.min(MAX_HEIGHT, viewportHeight - 2 * MARGIN)
+    const height = Math.min(MAX_HEIGHT, visibleBottom - visibleTop - 2 * MARGIN)
     placement.value = {
       up: false,
-      style: { ...horizontal, top: `${(viewportHeight - height) / 2}px`, maxHeight: `${height}px` }
+      style: { ...horizontal, top: `${(visibleTop + visibleBottom - height) / 2}px`, maxHeight: `${height}px` }
     }
     return
   }
@@ -80,10 +85,9 @@ function place() {
     up,
     style: {
       ...horizontal,
+      top: `${up ? upBottom : downTop}px`,
       maxHeight: `${Math.min(MAX_HEIGHT, up ? above : below)}px`,
-      ...(up
-        ? { bottom: `${viewportHeight - rect.top + GAP}px` }
-        : { top: `${rect.bottom + GAP}px` })
+      ...(up ? { translate: '0 -100%' } : {})
     }
   }
 }
@@ -146,21 +150,43 @@ function onTriggerKeydown(event: KeyboardEvent) {
   }
 }
 
-function onPointerDownOutside(event: PointerEvent) {
-  const target = event.target as Node
-  if (panel.value?.contains(target) || trigger.value?.contains(target)) return
-  hide()
+function isInside(target: EventTarget | null) {
+  const node = target as Node
+  return Boolean(panel.value?.contains(node) || trigger.value?.contains(node))
+}
+
+let outsidePress: { x: number, y: number } | null = null
+
+function onPointerDown(event: PointerEvent) {
+  outsidePress = null
+  if (isInside(event.target)) return
+  if (event.pointerType === 'mouse') hide()
+  else outsidePress = { x: event.clientX, y: event.clientY }
+}
+
+function onPointerUp(event: PointerEvent) {
+  if (!outsidePress) return
+  const moved = Math.hypot(event.clientX - outsidePress.x, event.clientY - outsidePress.y)
+  outsidePress = null
+  if (moved < TAP_SLOP && !isInside(event.target)) hide()
 }
 
 function onViewportChange() {
   if (open.value) place()
 }
 
+function onScroll(event: Event) {
+  if (!panel.value?.contains(event.target as Node)) onViewportChange()
+}
+
 function listen(enabled: boolean) {
   const method = enabled ? 'addEventListener' : 'removeEventListener'
-  document[method]('pointerdown', onPointerDownOutside as EventListener)
+  document[method]('pointerdown', onPointerDown as EventListener)
+  document[method]('pointerup', onPointerUp as EventListener)
+  document[method]('scroll', onScroll, true)
   window[method]('resize', onViewportChange)
   window.visualViewport?.[method]('resize', onViewportChange)
+  window.visualViewport?.[method]('scroll', onViewportChange)
 }
 
 watch(open, listen)
@@ -311,7 +337,16 @@ onBeforeUnmount(() => listen(false))
 }
 
 .country-select__panel--up {
+  flex-direction: column-reverse;
   transform-origin: bottom center;
+
+  .country-select__search {
+    margin: 4px 8px 8px;
+  }
+
+  .country-select__list {
+    padding: 8px 8px 4px;
+  }
 }
 
 .country-select__search {
@@ -431,6 +466,16 @@ onBeforeUnmount(() => listen(false))
     width: 20px;
     height: 15px;
     border-radius: 2px;
+  }
+
+  &.country-select__panel--up {
+    .country-select__search {
+      margin: 2px 6px 6px;
+    }
+
+    .country-select__list {
+      padding: 6px 6px 4px;
+    }
   }
 }
 
