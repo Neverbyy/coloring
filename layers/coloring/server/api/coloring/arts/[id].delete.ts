@@ -1,7 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { coloringArts } from '../../../db/schema'
 
-// Удалить свой импортированный арт; рисунки к нему удаляются каскадом
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const [deleted] = await useDb()

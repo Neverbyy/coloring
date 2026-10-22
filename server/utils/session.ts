@@ -1,21 +1,15 @@
-import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, gt } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import { sessions, users } from '../db/schema'
 
 declare module 'h3' {
   interface H3EventContext {
-    // Кэш на время запроса: undefined — ещё не проверяли, null — гость
     sessionUser?: SessionUser | null
   }
 }
 
 const COOKIE_NAME = 'session'
 const LIFETIME_MS = 180 * 24 * 60 * 60 * 1000
-
-function hashToken(token: string): string {
-  return createHash('sha256').update(token).digest('hex')
-}
 
 function setSessionCookie(event: H3Event, token: string, expires: Date) {
   setCookie(event, COOKIE_NAME, token, {
@@ -28,9 +22,9 @@ function setSessionCookie(event: H3Event, token: string, expires: Date) {
 }
 
 export async function createSession(event: H3Event, userId: string): Promise<void> {
-  const token = randomBytes(32).toString('base64url')
+  const token = newSessionToken()
   const expiresAt = new Date(Date.now() + LIFETIME_MS)
-  await useDb().insert(sessions).values({ id: hashToken(token), userId, expiresAt })
+  await useDb().insert(sessions).values({ id: hashSessionToken(token), userId, expiresAt })
   setSessionCookie(event, token, expiresAt)
 }
 
@@ -41,7 +35,7 @@ export async function getSessionUser(event: H3Event): Promise<SessionUser | null
   let user: SessionUser | null = null
 
   if (token) {
-    const id = hashToken(token)
+    const id = hashSessionToken(token)
     const [row] = await useDb()
       .select({ id: users.id, username: users.username, country: users.country, expiresAt: sessions.expiresAt })
       .from(sessions)
@@ -51,7 +45,6 @@ export async function getSessionUser(event: H3Event): Promise<SessionUser | null
 
     if (row) {
       user = { id: row.id, username: row.username, country: row.country }
-      // Скользящий срок: активную сессию продлеваем, когда прошла половина срока
       if (row.expiresAt.getTime() - Date.now() < LIFETIME_MS / 2) {
         const expiresAt = new Date(Date.now() + LIFETIME_MS)
         await useDb().update(sessions).set({ expiresAt }).where(eq(sessions.id, id))
@@ -74,7 +67,7 @@ export async function requireUser(event: H3Event): Promise<SessionUser> {
 
 export async function destroySession(event: H3Event): Promise<void> {
   const token = getCookie(event, COOKIE_NAME)
-  if (token) await useDb().delete(sessions).where(eq(sessions.id, hashToken(token)))
+  if (token) await useDb().delete(sessions).where(eq(sessions.id, hashSessionToken(token)))
   deleteCookie(event, COOKIE_NAME, { path: '/' })
   event.context.sessionUser = null
 }

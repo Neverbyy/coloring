@@ -1,6 +1,5 @@
 import type { H3Event } from 'h3'
 
-// Адрес содержит версию или неизменяемый id — содержимое под ним не меняется
 export const IMMUTABLE_CACHE = 'private, max-age=31536000, immutable'
 
 const FORMATS = {
@@ -10,8 +9,6 @@ const FORMATS = {
 
 type ImageFormat = keyof typeof FORMATS
 
-// Тело запроса не больше maxBytes: сначала по заголовку (не читая), потом по факту.
-// Пустое — null. statusCode — код ответа на слишком большое тело
 export async function readLimitedBody(event: H3Event, maxBytes: number, tooBigMessage: string, statusCode = 413): Promise<Buffer | null> {
   const tooBig = () => createError({ statusCode, message: tooBigMessage })
   if (Number(getRequestHeader(event, 'content-length') ?? 0) > maxBytes) throw tooBig()
@@ -20,8 +17,6 @@ export async function readLimitedBody(event: H3Event, maxBytes: number, tooBigMe
   return body?.length ? body : null
 }
 
-// Картинка из тела запроса: формат проверяется по сигнатуре файла, а не по заголовку.
-// Ошибка — 400, не 413: 413 автосохранение понимает как «история не поместилась»
 export async function readImageBody(event: H3Event, format: ImageFormat, maxBytes: number): Promise<Buffer> {
   const message = `Нужна картинка ${format.toUpperCase()} до ${Math.round(maxBytes / 1024)} КБ`
   const image = await readLimitedBody(event, maxBytes, message, 400)
@@ -32,8 +27,6 @@ export async function readImageBody(event: H3Event, format: ImageFormat, maxByte
   return image
 }
 
-// Отдать картинку из БД; нет — 404. SVG — с запретом скриптов: даже открытый напрямую,
-// пропущенный санитизацией скрипт не выполнится
 export function sendImage(event: H3Event, image: Buffer | string | null, format: ImageFormat | 'svg', cacheControl: string) {
   if (!image) throw createError({ statusCode: 404, message: 'Картинки нет' })
   setResponseHeaders(event, format === 'svg'

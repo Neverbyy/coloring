@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import type { CountryOption } from '~/composables/useCountryOptions'
 
-// Свой список вместо <select>: в нативном нельзя показать флаги-картинки
-// (эмодзи-флагов нет в Windows) и ограничить высоту выпадающего меню
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   options: CountryOption[]
   placeholder?: string
-}>()
+  label?: string
+  compact?: boolean
+  clearLabel?: string
+}>(), {
+  placeholder: undefined,
+  label: 'Страна',
+  clearLabel: undefined
+})
 
 const model = defineModel<string>({ required: true })
 
@@ -14,8 +19,6 @@ const MARGIN = 8
 const GAP = 6
 const MAX_HEIGHT = 320
 const MIN_WIDTH = 280
-// Если снизу меньше — меню открывается вверх (когда сверху просторнее)
-// или на всю высоту экрана (когда тесно с обеих сторон)
 const MIN_SPACE = 220
 
 const id = useId()
@@ -33,19 +36,20 @@ const selected = computed(() => props.options.find(option => option.code === mod
 
 const filtered = computed(() => {
   const q = query.value.trim().toLocaleLowerCase('ru')
-  if (!q) return props.options
-  return props.options.filter(option =>
-    option.name.toLocaleLowerCase('ru').includes(q) || option.code.toLowerCase() === q
-  )
+  if (!q) return props.clearLabel ? [{ code: '', name: props.clearLabel }, ...props.options] : props.options
+  const starting: CountryOption[] = []
+  const containing: CountryOption[] = []
+  for (const option of props.options) {
+    const name = option.name.toLocaleLowerCase('ru')
+    if (name.startsWith(q) || option.code.toLowerCase() === q) starting.push(option)
+    else if (name.includes(q)) containing.push(option)
+  }
+  return [...starting, ...containing]
 })
 
 watch(filtered, () => {
   activeIndex.value = filtered.value.length ? 0 : -1
 })
-
-function flagUrl(code: string) {
-  return `/flags/${code.toLowerCase()}.svg`
-}
 
 function optionId(index: number) {
   return `${id}-option-${index}`
@@ -62,8 +66,6 @@ function place() {
   const left = Math.min(Math.max(rect.left, MARGIN), viewportWidth - width - MARGIN)
   const horizontal = { left: `${left}px`, width: `${width}px` }
 
-  // Низкий экран (телефон горизонтально): мало места и сверху, и снизу —
-  // показываем меню на всю высоту поверх формы
   if (Math.max(below, above) < MIN_SPACE) {
     const height = Math.min(MAX_HEIGHT, viewportHeight - 2 * MARGIN)
     placement.value = {
@@ -97,10 +99,8 @@ async function show() {
   open.value = true
   await nextTick()
   activeIndex.value = Math.max(0, filtered.value.findIndex(option => option.code === model.value))
-  // Выбранная страна — в середине списка, а не у края
   const element = list.value?.querySelector<HTMLElement>(`#${CSS.escape(optionId(activeIndex.value))}`)
   if (element && list.value) list.value.scrollTop = element.offsetTop - list.value.clientHeight / 2 + element.offsetHeight / 2
-  // На тач-устройствах не открываем клавиатуру сразу — она закроет пол-экрана
   if (!isTouchDevice()) search.value?.focus()
 }
 
@@ -169,7 +169,7 @@ onBeforeUnmount(() => listen(false))
 </script>
 
 <template>
-  <div class="country-select">
+  <div class="country-select" :class="{ 'country-select--compact': compact }">
     <button
       ref="trigger"
       type="button"
@@ -178,7 +178,7 @@ onBeforeUnmount(() => listen(false))
       aria-haspopup="listbox"
       :aria-expanded="open"
       :aria-controls="`${id}-list`"
-      aria-label="Страна"
+      :aria-label="label"
       @click="toggle"
       @keydown="onTriggerKeydown"
     >
@@ -186,6 +186,7 @@ onBeforeUnmount(() => listen(false))
         <img class="country-select__flag" :src="flagUrl(selected.code)" alt="" width="24" height="18">
         <span class="country-select__label">{{ selected.name }}</span>
       </template>
+      <span v-else-if="clearLabel && !model" class="country-select__label">{{ clearLabel }}</span>
       <span v-else class="country-select__label country-select__label--placeholder">{{ placeholder }}</span>
       <svg class="country-select__chevron" width="16" height="10" viewBox="0 0 16 10" aria-hidden="true">
         <path d="M2 2l6 6 6-6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
@@ -198,7 +199,7 @@ onBeforeUnmount(() => listen(false))
           v-if="open"
           ref="panel"
           class="country-select__panel"
-          :class="{ 'country-select__panel--up': placement.up }"
+          :class="{ 'country-select__panel--up': placement.up, 'country-select__panel--compact': compact }"
           :style="placement.style"
         >
           <input
@@ -234,7 +235,7 @@ onBeforeUnmount(() => listen(false))
               @pointermove="activeIndex = index"
               @click="choose(option)"
             >
-              <img class="country-select__flag" :src="flagUrl(option.code)" alt="" width="24" height="18" loading="lazy">
+              <img v-if="option.code" class="country-select__flag" :src="flagUrl(option.code)" alt="" width="24" height="18" loading="lazy">
               <span class="country-select__label">{{ option.name }}</span>
             </li>
             <li v-if="!filtered.length" class="country-select__empty">Ничего не нашлось</li>
@@ -323,7 +324,6 @@ onBeforeUnmount(() => listen(false))
   outline: none;
   background: $color-board;
   color: $color-ink;
-  // Не меньше 16px — иначе iOS зумит страницу при фокусе
   font: 500 18px/1 $font-body;
 
   &::placeholder {
@@ -332,7 +332,6 @@ onBeforeUnmount(() => listen(false))
 }
 
 .country-select__list {
-  // offsetParent для пунктов — нужен, чтобы прокрутить к выбранной стране
   position: relative;
   flex: 1;
   min-height: 0;
@@ -366,6 +365,73 @@ onBeforeUnmount(() => listen(false))
   color: rgba($color-ink, 0.5);
   font-size: 16px;
   text-align: center;
+}
+
+.country-select--compact {
+  .country-select__trigger {
+    gap: 8px;
+    height: 40px;
+    padding: 0 12px;
+    border-width: 1px;
+    border-color: #e2e8f0;
+    border-radius: 10px;
+    font: inherit;
+
+    &:focus-visible,
+    &.country-select__trigger--open {
+      border-color: $color-progress;
+    }
+  }
+
+  .country-select__chevron {
+    width: 12px;
+    color: rgba($color-ink, 0.5);
+  }
+
+  .country-select__flag {
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+  }
+}
+
+.country-select__panel--compact {
+  border-width: 1px;
+  border-color: #e2e8f0;
+  border-radius: 10px;
+
+  .country-select__search {
+    height: 36px;
+    margin: 6px 6px 2px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 400;
+  }
+
+  .country-select__list {
+    padding: 4px 6px 6px;
+  }
+
+  .country-select__option {
+    gap: 8px;
+    min-height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 400;
+  }
+
+  .country-select__option--active {
+    background: #e3f2fc;
+  }
+
+  .country-select__flag {
+    width: 20px;
+    height: 15px;
+    border-radius: 2px;
+  }
 }
 
 .country-select-panel-enter-active,

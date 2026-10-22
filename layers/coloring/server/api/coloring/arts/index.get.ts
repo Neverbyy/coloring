@@ -5,16 +5,14 @@ export default defineEventHandler(async (event): Promise<GalleryPage> => {
   const requested = Number.parseInt(String(getQuery(event).page ?? '1'), 10)
   let page = Number.isFinite(requested) && requested > 0 ? requested : 1
 
-  // Обычно — один запрос: страница вместе с общим числом артов
-  let { items, total } = await listGalleryArts(user.id, (page - 1) * GALLERY_PAGE_SIZE, GALLERY_PAGE_SIZE)
+  let { items, total } = await listGalleryArts(user, (page - 1) * GALLERY_PAGE_SIZE, GALLERY_PAGE_SIZE)
 
-  // Номер вне диапазона не ошибка: отдаём последнюю существующую страницу
   if (total === null) {
-    const all = await countGalleryArts(user.id)
+    const all = await countGalleryArts(user)
     const last = Math.max(1, Math.ceil(all / GALLERY_PAGE_SIZE))
     if (page > last) {
       page = last
-      ;({ items, total } = await listGalleryArts(user.id, (page - 1) * GALLERY_PAGE_SIZE, GALLERY_PAGE_SIZE))
+      ;({ items, total } = await listGalleryArts(user, (page - 1) * GALLERY_PAGE_SIZE, GALLERY_PAGE_SIZE))
     }
     total ??= all
   }

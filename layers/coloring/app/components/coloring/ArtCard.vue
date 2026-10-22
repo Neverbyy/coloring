@@ -5,12 +5,8 @@ import type { GalleryArt } from '../../../shared/gallery'
 const props = defineProps<{ art: GalleryArt, deleting?: boolean }>()
 const emit = defineEmits<{ delete: [] }>()
 
-// Удаление — в два нажатия: детям легко задеть крестик случайно
 const confirming = ref(false)
 
-// Рисунок начинает грузиться ещё до перехода — пока идёт переход, ответ уже в пути.
-// Не сразу на касание: в ленте экранов касание часто начинает свайп, и браузер тогда присылает
-// pointercancel. Поэтому — через PREFETCH_HOLD_MS удержания или на отпускании, что раньше
 const PREFETCH_HOLD_MS = 100
 const queryClient = useQueryClient()
 let prefetchTimer: ReturnType<typeof setTimeout> | undefined
@@ -36,13 +32,9 @@ function flushPrefetch() {
 
 onBeforeUnmount(cancelPrefetch)
 
-// Свежий рисунок из этой вкладки показываем сразу, не дожидаясь ответа сервера
 const previews = useDrawingPreviews()
 const preview = computed(() => previews.get(props.art.id))
-// Миниатюра рисунка — вся бумага с полями; раскладываем её как экран рисования:
-// картинка вписана в карточку, поля заполняют остаток. Без рисунка — исходная картинка
 const thumbnail = computed(() => preview.value?.thumbnail ?? props.art.thumbnail)
-const paperStyle = computed(() => paperLayout(props.art.width, props.art.height))
 const progress = computed(() => preview.value?.progress ?? props.art.progress)
 </script>
 
@@ -51,28 +43,23 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
     <NuxtLink
       class="art-card__link"
       :to="`/coloring/${art.id}`"
-      :aria-label="`${art.title}, ${Math.floor(progress)}%`"
+      :aria-label="`${art.title}${art.isNew ? ', новое' : ''}, ${Math.floor(progress)}%`"
       @pointerdown="startPrefetch"
       @pointerup="flushPrefetch"
       @pointercancel="cancelPrefetch"
       @keydown.enter="prefetch"
     >
-      <span class="art-card__art">
-        <span class="art-card__stage" :style="{ '--ratio': art.width / art.height }">
-          <img
-            v-if="thumbnail"
-            class="art-card__paper"
-            :style="paperStyle"
-            :src="thumbnail"
-            :alt="art.title"
-            draggable="false"
-            loading="lazy"
-          >
-          <img v-else class="art-card__image" :src="art.image" :alt="art.title" draggable="false" loading="lazy">
-        </span>
-      </span>
+      <ColoringThumbnail
+        class="art-card__art"
+        :title="art.title"
+        :image="art.image"
+        :width="art.width"
+        :height="art.height"
+        :thumbnail="thumbnail"
+      />
       <ColoringProgressFrame :progress="progress" />
     </NuxtLink>
+    <span v-if="art.isNew" class="art-card__new" aria-hidden="true">Новое</span>
     <button
       v-if="art.own && !confirming"
       type="button"
@@ -117,7 +104,6 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
 </template>
 
 <style scoped lang="scss">
-// Под мышью карточка приподнимается целиком (вместе с крестиком)
 .art-card {
   position: relative;
   height: $card-height;
@@ -142,33 +128,8 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
 }
 
 .art-card__art {
-  container-type: size;
-  display: grid;
-  place-items: center;
   height: 100%;
-  overflow: hidden;
   border-radius: $frame-radius - $frame-border;
-}
-
-// Размер вписанной картинки; бумага выходит за него, лишнее обрезает карточка
-.art-card__stage {
-  position: relative;
-  display: block;
-  width: min(100cqw, calc(100cqh * var(--ratio)));
-  aspect-ratio: var(--ratio);
-}
-
-.art-card__image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.art-card__paper {
-  position: absolute;
-  display: block;
-  max-width: none;
 }
 
 .art-card__delete {
@@ -185,6 +146,22 @@ const progress = computed(() => preview.value?.progress ?? props.art.progress)
   color: #fff;
   transition: transform 0.1s;
   @include pressable(0.9);
+}
+
+.art-card__new {
+  position: absolute;
+  top: 0;
+  left: 14px;
+  height: 36px;
+  padding: 0 14px;
+  border: 4px solid #fff;
+  border-radius: 18px;
+  background: $color-accent;
+  color: #fff;
+  font: 18px/28px $font-display;
+  white-space: nowrap;
+  transform: rotate(-6deg);
+  pointer-events: none;
 }
 
 .art-card__confirm {

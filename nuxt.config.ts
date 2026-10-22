@@ -8,8 +8,6 @@ export default defineNuxtConfig({
     strict: true,
     typeCheck: false
   },
-  // Только сервер. Значение задаётся при запуске через NUXT_DATABASE_URL,
-  // поэтому строка подключения не попадает в сборку
   runtimeConfig: {
     databaseUrl: ''
   },
@@ -32,8 +30,11 @@ export default defineNuxtConfig({
     }
   },
   css: ['~/assets/styles/main.scss'],
+  routeRules: {
+    '/admin': { ssr: false, headers: { 'x-robots-tag': 'noindex, nofollow' } },
+    '/admin/**': { ssr: false, headers: { 'x-robots-tag': 'noindex, nofollow' } }
+  },
   nitro: {
-    // Флаги стран (пакет flag-icons) раздаются как статика /flags/<код>.svg, мимо бандла
     publicAssets: [
       {
         baseURL: 'flags',

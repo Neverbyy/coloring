@@ -3,25 +3,20 @@ import { artApiPath } from '../../shared/gallery'
 import type { DrawingState, HistoryConflict, HistoryOp, HistorySave } from '../../shared/history'
 import { readStorage, removeStorage, writeStorage } from '~/utils/storage'
 
-// Ключ localStorage неотправленного рисунка (свой у каждого игрока).
-// v3 — координаты бумаги с полями, в хранилище только неотправленный хвост; база — ключом `…:base`
 export function pendingStorageKey(userId: string, artId: string): string {
   return `coloring:v3:${userId}:${artId}`
 }
 
-// Забыть неотправленное (арт удалён)
 export function forgetPending(storageKey: string) {
   removeStorage(storageKey)
   removeStorage(`${storageKey}:base`)
 }
 
-// saved — всё на сервере, saving — отправляем, offline — сервер недоступен, повторим позже
 export type SyncStatus = 'saved' | 'saving' | 'offline'
 
 export interface SyncSource {
   baseSeq: () => number
   baseImage: () => Blob | null
-  // Операции после базы
   ops: () => HistoryOp[]
   cursor: () => number
   progress: () => number
@@ -29,11 +24,9 @@ export interface SyncSource {
 
 export interface SyncOptions {
   artId: string
-  // Ключ localStorage для несохранённого состояния (свой у каждого игрока)
   storageKey: string
   source: SyncSource
   onStatus: (status: SyncStatus) => void
-  // Сессия закончилась — сохранять некуда
   onUnauthorized: () => void
 }
 
@@ -45,22 +38,16 @@ export interface RestoredState {
   progress: number
 }
 
-// Несохранённое в localStorage — только то, чего нет на сервере (обычно 0–3 операции):
-// пишется на каждое действие, поэтому должно быть маленьким
 interface PendingState {
   baseSeq: number
-  // Новая база ещё не на сервере; её картинка — в отдельном ключе (пишется один раз)
   baseUnsent: boolean
-  // Операции до этого места сервер знает (не меньше baseSeq)
   fromSeq: number
-  // Операции после fromSeq
   ops: HistoryOp[]
   cursor: number
   progress: number
   savedAt: number
 }
 
-// Пауза перед отправкой: серия быстрых штрихов уходит одним запросом
 const DEBOUNCE_MS = 700
 const RETRY_MIN_MS = 2000
 const RETRY_MAX_MS = 30_000
@@ -78,21 +65,13 @@ async function dataUrlToBlob(url: string): Promise<Blob> {
   return (await fetch(url)).blob()
 }
 
-// Автосохранение рисунка. Сервер хранит базовое изображение и операции после него;
-// клиент отправляет изменения после последнего подтверждённого места (syncedPrefix).
-// Пока ответа нет, состояние лежит в localStorage — закрытая вкладка или обрыв сети
-// не теряют работу
 export class HistorySync {
-  // Сквозной номер: первые syncedPrefix операций на клиенте и сервере совпадают
   private syncedPrefix = 0
   private syncedCursor = 0
   private syncedProgress = 0
-  // Новое базовое изображение ещё не на сервере
   private baseUnsent = false
-  // Картинка неотправленной базы уже в localStorage
   private baseStored = false
   private thumbnail: Blob | null = null
-  // Отмена ниже отправляемого, случившаяся во время запроса: ответ сервера её не перекроет
   private truncatedDuringSend: number | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private retryDelay = RETRY_MIN_MS
@@ -116,7 +95,6 @@ export class HistorySync {
     return `${this.options.storageKey}:base`
   }
 
-  // Состояние с сервера + несохранённое из прошлого визита (оно новее — побеждает)
   async restore(server: DrawingState, serverBase: Blob | null): Promise<RestoredState> {
     const serverHead = server.baseSeq + server.ops.length
     this.syncedPrefix = serverHead
@@ -133,7 +111,6 @@ export class HistorySync {
     const pending = this.readPending()
     if (!pending) return fromServer
 
-    // База: своя неотправленная из localStorage или та же, что на сервере
     let baseImage: Blob | null = null
     if (pending.baseUnsent) {
       const stored = readStorage(this.baseKey)
@@ -142,11 +119,9 @@ export class HistorySync {
     } else if (pending.baseSeq === server.baseSeq) {
       baseImage = serverBase
     } else {
-      // База на сервере сменилась (другое устройство), а своей картинки базы нет — берём сервер
       return this.discardPending(fromServer)
     }
 
-    // Операции между базой и fromSeq сервер знает — берём у него, хвост — свой
     const known = pending.fromSeq > pending.baseSeq
     if (known && (server.baseSeq > pending.baseSeq || serverHead < pending.fromSeq)) {
       return this.discardPending(fromServer)
@@ -166,7 +141,6 @@ export class HistorySync {
     }
   }
 
-  // Изменилась история или курсор
   changed(truncatedTo?: number) {
     if (truncatedTo !== undefined) {
       this.syncedPrefix = Math.min(this.syncedPrefix, truncatedTo)
@@ -176,15 +150,11 @@ export class HistorySync {
     this.schedule(DEBOUNCE_MS)
   }
 
-  // Старые операции «запечены» в новое базовое изображение
   baked(image: Blob) {
     this.baseUnsent = true
     this.baseStored = false
-    // Картинка базы — в localStorage один раз (отдельным ключом); до этого там остаётся
-    // прежнее состояние, оно тоже полное
     blobToDataUrl(image).then((url) => {
       if (this.options.source.baseImage() !== image || !this.baseUnsent) return
-      // Не поместилось — база уйдёт только на сервер
       if (!writeStorage(this.baseKey, url)) return
       this.baseStored = true
       this.writePending()
@@ -197,7 +167,6 @@ export class HistorySync {
     this.schedule(DEBOUNCE_MS)
   }
 
-  // Уход со страницы: последняя попытка отправить; не дошло — останется в localStorage
   dispose(lastThumbnail?: Promise<Blob | null>) {
     this.disposed = true
     clearTimeout(this.timer)
@@ -253,7 +222,6 @@ export class HistorySync {
       return
     }
     if (status === 409 || status === 413) {
-      // Сервер опирается на другую базу или не знает нужных операций — выравниваем
       const conflict = (error as { data?: { data?: HistoryConflict } }).data?.data
       const localBase = this.options.source.baseSeq()
       if (conflict && localBase >= conflict.baseSeq && localBase <= conflict.head && status === 409) {
@@ -278,7 +246,6 @@ export class HistorySync {
       body: seq > 0 && image ? image : undefined,
       headers: { 'content-type': 'image/png' }
     })
-    // Операции сервера после базы сохранились — подтверждённое место не ниже базы и не выше head
     this.syncedPrefix = Math.min(Math.max(this.syncedPrefix, seq), head)
     if (source.baseSeq() === seq) {
       this.baseUnsent = false
@@ -301,7 +268,6 @@ export class HistorySync {
     this.truncatedDuringSend = null
     await $fetch(this.url('/history'), { method: 'POST', body: save, keepalive })
 
-    // Пока шёл запрос, игрок мог отменить действия ниже отправленного — тогда не сдвигаемся выше
     this.syncedPrefix = Math.min(fromSeq + save.ops.length, this.truncatedDuringSend ?? Number.POSITIVE_INFINITY)
     this.truncatedDuringSend = null
     this.syncedCursor = save.cursor
@@ -331,7 +297,6 @@ export class HistorySync {
   private writePending() {
     const { source } = this.options
     const baseSeq = source.baseSeq()
-    // Неотправленную базу без её картинки восстановить нельзя — ждём, пока baked её сохранит
     if (this.baseUnsent && baseSeq > 0 && !this.baseStored) return
     const fromSeq = Math.max(this.syncedPrefix, baseSeq)
     const pending: PendingState = {

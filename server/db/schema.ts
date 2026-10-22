@@ -1,19 +1,14 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
-
-// Общие таблицы платформы. RLS включён без политик — REST API Supabase к ним доступа не имеет
+import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
-  // Как ввёл пользователь — для показа
   username: text('username').notNull(),
-  // Нормализованное имя: уникальность без учёта регистра
   usernameKey: text('username_key').notNull().unique(),
   country: text('country').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
 }).enableRLS()
 
 export const sessions = pgTable('sessions', {
-  // SHA-256 токена из cookie: утечка таблицы не даёт войти под чужой сессией
   id: text('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -23,3 +18,22 @@ export const sessions = pgTable('sessions', {
 ]).enableRLS()
 
 export type UserRow = typeof users.$inferSelect
+
+export const admins = pgTable('admins', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  role: text('role', { enum: ['admin'] }).notNull().default('admin'),
+  failedLogins: integer('failed_logins').notNull().default(0),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow()
+}).enableRLS()
+
+export const adminSessions = pgTable('admin_sessions', {
+  id: text('id').primaryKey(),
+  adminId: uuid('admin_id').notNull().references(() => admins.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull()
+}, table => [
+  index('admin_sessions_admin_idx').on(table.adminId)
+]).enableRLS()

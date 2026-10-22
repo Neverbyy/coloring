@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import type { ColoringTool } from '../../stores/coloringTools'
 
-// Рисунки инструментов из макета целиком (160×44). В макете они обрезаны рамкой
-// 60px (неактивный) или 90px (активный) — обрезку делает контейнер панели.
-// color красит корпус карандаша и ворс кисти; по умолчанию чёрный, как в макете
 withDefaults(defineProps<{
   kind: ColoringTool
   color?: string

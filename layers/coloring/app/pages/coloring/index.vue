@@ -14,11 +14,8 @@ const page = computed(() => {
 })
 
 const { data, isPlaceholderData, suspense } = useGalleryPageQuery(page)
-// SSR отдаёт галерею уже с данными; в браузере запрос не повторяется (dehydrate/hydrate).
-// Если страница уже в кэше (возврат из арта) — показываем сразу, обновление идёт в фоне
 if (import.meta.server || !data.value) await suspense()
 
-// Сервер вернул другую страницу (номер вне диапазона) — исправляем адрес
 watch(() => data.value?.page, (actual) => {
   if (actual && actual !== page.value && !isPlaceholderData.value) {
     router.replace({ query: { ...route.query, page: actual === 1 ? undefined : String(actual) } })
@@ -27,9 +24,6 @@ watch(() => data.value?.page, (actual) => {
 
 watch(page, () => scroller.value?.scrollTo({ top: 0 }))
 
-// Смена страницы анимируется в сторону листания: вперёд — карточки въезжают справа, назад — слева.
-// Ключ сетки — номер показанной страницы: пока новая грузится, остаётся прежняя (без анимации)
-// Длительности — с CSS ниже: уход сетки и въезд карточек по очереди (последняя — с задержкой)
 const PAGE_LEAVE_MS = 140
 const PAGE_ENTER_MS = 450
 const pageTransition = ref('gallery-page-next')
@@ -37,7 +31,6 @@ watch(() => data.value?.page, (next, previous) => {
   if (next && previous) pageTransition.value = next >= previous ? 'gallery-page-next' : 'gallery-page-prev'
 })
 
-// На узком экране — лента экранов со свайпом вместо пагинации
 const { swipe, screens, currentScreen, goToScreen, showFirst, onScroll } = useGalleryScreens(pager, data)
 const { importing, importArt, deleteArt } = useOwnArts()
 const notice = ref<{ message: string, tone: 'error' | 'info' } | null>(null)
@@ -52,7 +45,6 @@ async function onImport(file: File) {
   notice.value = null
   try {
     const { notes } = await importArt(file)
-    // Новый арт — первый в галерее
     if (swipe.value) {
       showFirst()
     } else {
@@ -78,7 +70,6 @@ async function onDelete(art: GalleryArt) {
 </script>
 
 <template>
-  <!-- Файл, брошенный мимо карточки «+», браузер открыл бы вместо игры -->
   <main ref="scroller" class="gallery" @dragover.prevent @drop.prevent>
     <div ref="pager" class="gallery__pager" @scroll.passive="onScroll">
       <div
@@ -109,7 +100,6 @@ async function onDelete(art: GalleryArt) {
             </ul>
           </Transition>
 
-          <!-- Обёртка — своя: на узких экранах её прячет CSS ещё до загрузки скриптов -->
           <div v-if="!swipe && data && data.pageCount > 1" class="gallery__pagination">
             <ColoringPagination :page="data.page" :page-count="data.pageCount" />
           </div>
@@ -140,9 +130,7 @@ async function onDelete(art: GalleryArt) {
 
 <style scoped lang="scss">
 $gap: 24px;
-// Место под точки экранов внизу
 $dots-height: 40px;
-// Кнопка музыки слева сверху (не выше выреза экрана); карточки начинаются под ней
 $toolbar-y: max(24px, env(safe-area-inset-top));
 $toolbar-size: 56px;
 $toolbar-gap: 20px;
@@ -165,7 +153,6 @@ $toolbar-gap: 20px;
   min-height: 100%;
 }
 
-// Сверху — место под кнопку музыки (во всех раскладках: иначе она закрыла бы первую карточку)
 .gallery__screen {
   display: flex;
   flex: 1 0 100%;
@@ -183,8 +170,6 @@ $toolbar-gap: 20px;
   z-index: 5;
 }
 
-// margin: auto центрирует галерею, пока она помещается (десктоп),
-// и прижимает к верху, когда карточек больше экрана
 .gallery__content {
   display: flex;
   flex-direction: column;
@@ -199,9 +184,6 @@ $toolbar-gap: 20px;
   opacity: 0.6;
 }
 
-// Несколько страниц: карточки — от верха, пагинация — у нижнего края экрана (или сразу под
-// карточками, если их больше экрана). Иначе на неполной странице сетка центрировалась
-// и пагинация прыгала при переключении
 @media (min-width: 681px) {
   .gallery__content--paged {
     align-self: stretch;
@@ -215,14 +197,10 @@ $toolbar-gap: 20px;
 
 .gallery__grid {
   display: grid;
-  // Не больше 4 колонок (как в макете), но не уже 140px — на узких экранах колонок меньше
   grid-template-columns: repeat(auto-fill, minmax(max(140px, calc((100% - 3 * #{$gap}) / 4)), 1fr));
   gap: $gap;
 }
 
-// Смена страницы (PAGE_LEAVE_MS / PAGE_ENTER_MS в скрипте): прежняя сетка быстро уходит
-// в сторону листания, карточки новой въезжают с другой стороны по очереди — 12 карточек
-// укладываются в 450 мс (задержка 15 мс на карточку + 280 мс въезда)
 .gallery-page-next-leave-active,
 .gallery-page-prev-leave-active {
   transition: opacity 0.14s ease-in, transform 0.14s ease-in;
@@ -262,7 +240,6 @@ $toolbar-gap: 20px;
   }
 }
 
-// Заглушка карточки: пока страница грузится, экран уже нужного размера
 .gallery__placeholder {
   display: block;
   height: $card-height;
@@ -282,7 +259,6 @@ $toolbar-gap: 20px;
   pointer-events: none;
 }
 
-// Кнопка крупнее точки — в неё легко попасть пальцем
 .gallery__dot {
   display: grid;
   place-items: center;
@@ -305,8 +281,6 @@ $toolbar-gap: 20px;
   transform: scale(1.35);
 }
 
-// Экраны: лента листается свайпом по экрану целиком, карточки прижаты к верху
-// (первый экран из SSR совпадает с собранным скриптом)
 @media (max-width: 680px) {
   .gallery {
     overflow: hidden;
@@ -325,8 +299,6 @@ $toolbar-gap: 20px;
     }
   }
 
-  // Отступы — у экрана, а не у карточек: от его внутренней высоты считаются ряды
-  // (скрипт и обрезка по рядам в CSS)
   .gallery__screen {
     container-type: size;
     min-height: 0;
@@ -336,8 +308,6 @@ $toolbar-gap: 20px;
     scroll-snap-stop: always;
   }
 
-  // До скрипта весь список — на первом экране; обрезаем по целым рядам (карточка + зазор),
-  // как потом разложит скрипт, — неполный ряд не мелькнёт
   .gallery__content {
     max-height: calc(round(down, 100cqh + #{$gap}, #{$card-height} + #{$gap}) - #{$gap});
     margin: 0 auto;

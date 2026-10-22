@@ -1,5 +1,3 @@
-// Включена ли фоновая музыка. Выбор игрока — в cookie: значок кнопки верный уже
-// в HTML с сервера, без перескока после загрузки скриптов
 export const useAudioStore = defineStore('audio', () => {
   const cookie = useCookie<'on' | 'off'>('music', {
     default: () => 'on',

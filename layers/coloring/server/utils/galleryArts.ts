@@ -1,27 +1,40 @@
-import { and, asc, count, desc, eq, isNull, or, sql } from 'drizzle-orm'
-import { coloringArts, coloringDrawings } from '../db/schema'
+import { and, asc, count, desc, eq, exists, isNull, or, sql } from 'drizzle-orm'
+import { coloringArtCountries, coloringArtOpens, coloringArtUsers, coloringArts, coloringDrawings } from '../db/schema'
 import type { H3Event } from 'h3'
 import { artApiPath, type GalleryArt } from '../../shared/gallery'
 
-// Какие арты видит игрок: опубликованные общие и свои импортированные.
-// Единственное место правила — им пользуются и галерея, и обработчики рисунка
 export function artNotFound() {
   return createError({ statusCode: 404, message: 'Раскраска не найдена' })
 }
 
-// id арта из адреса /api/coloring/arts/[id]/…
 export function artIdParam(event: H3Event): string {
   return getRouterParam(event, 'id') ?? ''
 }
 
-export function visibleTo(userId: string) {
+export function visibleTo(user: SessionUser) {
+  const db = useDb()
   return and(
     eq(coloringArts.published, true),
-    or(isNull(coloringArts.ownerId), eq(coloringArts.ownerId, userId))
+    or(
+      eq(coloringArts.ownerId, user.id),
+      and(
+        isNull(coloringArts.ownerId),
+        or(
+          eq(coloringArts.audience, 'all'),
+          exists(db.select({ one: sql`1` }).from(coloringArtCountries).where(and(
+            eq(coloringArtCountries.artId, coloringArts.id),
+            eq(coloringArtCountries.country, user.country)
+          ))),
+          exists(db.select({ one: sql`1` }).from(coloringArtUsers).where(and(
+            eq(coloringArtUsers.artId, coloringArts.id),
+            eq(coloringArtUsers.userId, user.id)
+          )))
+        )
+      )
+    )
   )
 }
 
-// Поля арта для галереи — без SVG (он отдаётся отдельным адресом)
 const artFields = {
   id: coloringArts.id,
   title: coloringArts.title,
@@ -40,7 +53,6 @@ interface ArtSummary {
   ownerId: string | null
 }
 
-// Только лёгкие поля рисунка — без картинок (о базе — лишь признак, есть ли она)
 const drawingFields = {
   progress: coloringDrawings.progress,
   thumbnailUpdatedAt: coloringDrawings.thumbnailUpdatedAt,
@@ -51,6 +63,20 @@ interface DrawingSummary {
   progress: number | null
   thumbnailUpdatedAt: Date | null
   hasBase: boolean | null
+  isNew?: boolean | null
+}
+
+const NEW_ART_DAYS = 14
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function isNewFor(userId: string) {
+  const since = new Date(Date.now() - NEW_ART_DAYS * DAY_MS).toISOString()
+  return sql<boolean>`(${coloringArts.ownerId} is null
+    and ${coloringArts.publishedAt} > ${since}::timestamptz
+    and ${coloringArts.publishedAt} > ${coloringArts.createdAt}
+    and ${coloringDrawings.userId} is null
+    and not exists (select 1 from ${coloringArtOpens}
+      where ${coloringArtOpens.artId} = ${coloringArts.id} and ${coloringArtOpens.userId} = ${userId}))`
 }
 
 export function toGalleryArt(art: ArtSummary, drawing: DrawingSummary): GalleryArt {
@@ -61,53 +87,48 @@ export function toGalleryArt(art: ArtSummary, drawing: DrawingSummary): GalleryA
     width: art.width,
     height: art.height,
     progress: drawing.progress ?? 0,
-    // Версия в адресе: браузер кэширует миниатюру навсегда и скачивает заново только после изменений
     thumbnail: drawing.thumbnailUpdatedAt
       ? artApiPath(art.id, `/thumbnail?v=${drawing.thumbnailUpdatedAt.getTime()}`)
       : null,
     hasBase: drawing.hasBase === true,
-    own: art.ownerId !== null
+    own: art.ownerId !== null,
+    isNew: drawing.isNew === true
   }
 }
 
-// Рисунок к арту — только текущего игрока (для join)
 function playerDrawing(userId: string) {
   return and(eq(coloringDrawings.artId, coloringArts.id), eq(coloringDrawings.userId, userId))
 }
 
-export async function countGalleryArts(userId: string): Promise<number> {
-  const [row] = await useDb().select({ total: count() }).from(coloringArts).where(visibleTo(userId))
+export async function countGalleryArts(user: SessionUser): Promise<number> {
+  const [row] = await useDb().select({ total: count() }).from(coloringArts).where(visibleTo(user))
   return row?.total ?? 0
 }
 
-// Страница галереи и общее число артов одним запросом (count(*) over () — до limit/offset).
-// Для пустой страницы (номер вне диапазона) total неизвестен — null.
-// Порядок: сначала свои (новые первыми — импортированный арт сразу рядом с «+»), потом общие
-export async function listGalleryArts(userId: string, offset: number, limit: number): Promise<{ items: GalleryArt[], total: number | null }> {
+export async function listGalleryArts(user: SessionUser, offset: number, limit: number): Promise<{ items: GalleryArt[], total: number | null }> {
   const rows = await useDb()
-    .select({ art: artFields, ...drawingFields, total: sql<number>`count(*) over ()`.mapWith(Number) })
+    .select({ art: artFields, ...drawingFields, isNew: isNewFor(user.id), total: sql<number>`count(*) over ()`.mapWith(Number) })
     .from(coloringArts)
-    .leftJoin(coloringDrawings, playerDrawing(userId))
-    .where(visibleTo(userId))
+    .leftJoin(coloringDrawings, playerDrawing(user.id))
+    .where(visibleTo(user))
     .orderBy(sql`${coloringArts.ownerId} is null`, asc(coloringArts.sortOrder), desc(coloringArts.createdAt), asc(coloringArts.id))
     .limit(limit)
     .offset(offset)
   return { items: rows.map(row => toGalleryArt(row.art, row)), total: rows[0]?.total ?? null }
 }
 
-export async function findGalleryArt(userId: string, id: string): Promise<GalleryArt | undefined> {
+export async function findGalleryArt(user: SessionUser, id: string): Promise<GalleryArt | undefined> {
   const [row] = await useDb()
-    .select({ art: artFields, ...drawingFields })
+    .select({ art: artFields, ...drawingFields, isNew: isNewFor(user.id) })
     .from(coloringArts)
-    .leftJoin(coloringDrawings, playerDrawing(userId))
-    .where(and(eq(coloringArts.id, id), visibleTo(userId)))
+    .leftJoin(coloringDrawings, playerDrawing(user.id))
+    .where(and(eq(coloringArts.id, id), visibleTo(user)))
     .limit(1)
   return row && toGalleryArt(row.art, row)
 }
 
-// Для обработчиков рисунка: арт существует и виден игроку, иначе 404
-export async function requireGalleryArt(userId: string, id: string): Promise<GalleryArt> {
-  const art = await findGalleryArt(userId, id)
+export async function requireGalleryArt(user: SessionUser, id: string): Promise<GalleryArt> {
+  const art = await findGalleryArt(user, id)
   if (!art) throw artNotFound()
   return art
 }

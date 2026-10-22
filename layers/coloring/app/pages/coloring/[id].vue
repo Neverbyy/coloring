@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
+import { artApiPath } from '../../../shared/gallery'
 import { COLORING_SOUNDS } from '../../../shared/sounds'
 import type { SyncStatus } from '../../engine/sync'
 
@@ -9,8 +10,6 @@ const queryClient = useQueryClient()
 
 const id = computed(() => String(route.params.id))
 const { data: art, error, suspense } = useArtQuery(id)
-// Ошибку разбираем ниже, suspense лишь дожидается ответа. При переходе из галереи данные
-// арта уже есть (кэш галереи) — экран показывается сразу, обновление идёт в фоне
 if (import.meta.server || !art.value) await suspense().catch(() => undefined)
 
 if (error.value) {
@@ -26,17 +25,14 @@ useHead({ title: () => `${art.value?.title ?? 'Раскраска'} — Раск
 
 const canvas = useTemplateRef('canvas')
 
-// Пока холст не загрузился — прогресс с сервера, потом — живой
 const liveProgress = ref<number | null>(null)
 const progress = computed(() => liveProgress.value ?? art.value?.progress ?? 0)
-// Вниз: 100% — только когда закрашено всё
 const percent = computed(() => Math.floor(progress.value))
 
 const canUndo = ref(false)
 const canRedo = ref(false)
 const syncStatus = ref<SyncStatus>('saved')
 
-// Завершение: встряска камеры и «Готово!»; вспышка — при снимке картинки
 const shaking = ref(false)
 const celebrating = ref(false)
 const flashing = ref(false)
@@ -47,7 +43,6 @@ function onHistory(undo: boolean, redo: boolean) {
   canRedo.value = redo
 }
 
-// Звук успеха: музыка на это время тише
 const SUCCESS_DUCK = 0.3
 const SUCCESS_DUCK_S = 2.2
 
@@ -65,12 +60,14 @@ async function onCamera() {
   flashing.value = true
   try {
     await shareImage(await canvas.value.exportImage(), art.value.title)
-  } catch {
-    // Рисунок ещё не загрузился — снимать нечего
-  }
+  } catch {}
 }
 
-// Галерея покажет новый прогресс — обновится только страница с этим артом
+onMounted(() => {
+  $fetch(artApiPath(id.value, '/open'), { method: 'POST' }).catch(() => {})
+  markArtSeen(queryClient, id.value)
+})
+
 onBeforeUnmount(() => {
   clearTimeout(celebrateTimer)
   invalidateArt(queryClient, id.value)
@@ -155,7 +152,6 @@ onBeforeUnmount(() => {
 <style scoped lang="scss">
 $column-width: 90px;
 
-// Мобильный: доска на весь экран. Десктоп: доска не больше 1280×920 по центру, со скруглением
 .art-screen {
   position: fixed;
   inset: 0;
@@ -170,10 +166,6 @@ $column-width: 90px;
   }
 }
 
-// Форма области рисунка ограничена: соотношение сторон от 0.5 до 1.6 (PAPER_MAX_ASPECT в
-// shared/history.ts). Шире или выше рамку не покрыла бы бумага — по краям нельзя было бы рисовать.
-// На очень широких и низких экранах (ноутбук 1366×657) доска чуть уже и стоит по центру.
-// Расчёт: колонки и рамка по ширине — 212px; по высоте отступы доски, рамка и кнопки отмены
 $frame-max-aspect: 1.6;
 $frame-min-aspect: 0.5;
 $board-chrome-x: 2 * $column-width + 2 * $frame-border;
@@ -196,7 +188,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
     border-radius: $frame-radius;
   }
 
-  // Телефон вертикально: сверху дом и камера, посередине холст, внизу полоса инструментов и цветов
   @include phone-portrait {
     flex-direction: column;
     gap: 12px;
@@ -206,7 +197,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   }
 }
 
-// Встряска камеры после завершения рисунка
 .board--shake {
   animation: board-shake 0.6s cubic-bezier(0.36, 0.07, 0.19, 0.97);
 }
@@ -241,7 +231,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   align-items: center;
   justify-content: space-between;
   width: $column-width;
-  // Снизу отступа нет: в макете камера стоит вплотную к нижнему краю колонки
   padding-top: 16px;
 
   @include phone-portrait {
@@ -265,7 +254,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   }
 }
 
-// Камера в макете повёрнута на −15° внутри рамки 78.7×79.7
 .board__camera {
   display: grid;
   place-items: center;
@@ -277,7 +265,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   }
 }
 
-// Рисунок готов — камера покачивается, подсказывая сохранить картинку
 .board__camera--hint img {
   animation: camera-hint 1.6s ease-in-out infinite;
 }
@@ -302,12 +289,10 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   }
 }
 
-// Карандаши справа уходят за край экрана — колонка заходит в safe area
 .board__right {
   flex: none;
   width: calc(#{$column-width} + env(safe-area-inset-right));
 
-  // Вертикально — полоса внизу, карандаши остриём вверх уходят за нижний край
   @include phone-portrait {
     width: auto;
     height: calc(#{$column-width} + env(safe-area-inset-bottom));
@@ -315,7 +300,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
 }
 
 .frame {
-  // Размер кнопок отмены и повтора — от него же отступ рисунка снизу
   --history-size: 55.94px;
 
   position: relative;
@@ -329,7 +313,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
     --history-size: 74.58px;
   }
 
-  // Низкий экран (телефон с панелью браузера): стрелки меньше, чтобы не закрывать рисунок
   @media (max-height: 360px) {
     --history-size: 44px;
   }
@@ -339,8 +322,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   }
 }
 
-// Рисунок вписан в рамку; снизу отступ под кнопки отмены — в макете они перекрывали
-// низ картинки, и там было бы не закрасить
 .frame__art {
   container-type: size;
   display: grid;
@@ -353,7 +334,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   touch-action: none;
 }
 
-// Связь с сервером пропала: рисовать можно, история сохранится позже
 .frame__status {
   position: absolute;
   top: 24px;
@@ -397,7 +377,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   opacity: 0;
 }
 
-// Вспышка «фотоаппарата» при сохранении картинки
 .frame__flash {
   position: absolute;
   inset: 0;
@@ -417,7 +396,6 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   }
 }
 
-// В макете левый край «0%» в 80px от правого края; прижимаем по правому, чтобы «100%» рос влево
 .frame__progress {
   position: absolute;
   top: 26px;

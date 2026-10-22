@@ -3,8 +3,6 @@ export interface PaletteColor {
   name: string
 }
 
-// 32 цвета. Восемь взяты из макета (карандаши), остальные подобраны сами.
-// Порядок = порядок в палитре снизу вверх; первые пять — как в макете над недавними
 export const PALETTE: readonly PaletteColor[] = [
   { hex: '#9D0B62', name: 'Бордовый' },
   { hex: '#12DEEC', name: 'Бирюзовый' },

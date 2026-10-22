@@ -64,6 +64,13 @@
       "when": 1792583876277,
       "tag": "0008_coloring_arts_svg_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792619066711,
+      "tag": "0009_admin_panel",
+      "breakpoints": true
     }
   ]
 }

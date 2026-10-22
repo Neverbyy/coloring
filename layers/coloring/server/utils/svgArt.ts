@@ -1,46 +1,26 @@
 import { optimize, type CustomPlugin, type XastElement, type XastRoot } from 'svgo'
-import { IMPORT_MESSAGES, MAX_SVG_BYTES } from '../../shared/gallery'
+import { IMPORT_MESSAGES, MAX_ART_TITLE, MAX_SVG_BYTES } from '../../shared/gallery'
 import { WORK_SIZE } from '../../shared/history'
-
-// Подготовка SVG к раскраске. Движок строит сегменты по растру (тёмные пиксели — линии),
-// поэтому рисунок становится чёрно-белым. Два вида файлов:
-// - фигуры (Figma: заливки, перо): каждая фигура — белая область с чёрной обводкой. Порядок фигур
-//   сохраняется, поэтому что в Figma закрыто верхней фигурой, закрыто и здесь. Тёмные заливки —
-//   это линии, они остаются чёрными;
-// - трассированная картинка (potrace, VTracer: PNG → SVG): серые заливки без обводок, линии — тёмные
-//   места между светлыми кусками. Каждая заливка → чёрная или белая по яркости, без обводок:
-//   иначе каждый кусок (и даже «шахматка» фальшивой прозрачности из PNG) получил бы свою рамку.
-// Заодно это санитизация: остаётся только белый список элементов и атрибутов.
-// Функция не зависит от БД — её же использует импорт игрока и (позже) админка
 
 export interface SvgArt {
   svg: string
-  // Размер картинки: длинная сторона — WORK_SIZE, как у рабочего растра
   width: number
   height: number
-  // Что пропущено — показать игроку
   notes: string[]
 }
 
 const MAX_SHAPES = 5000
 const MAX_ELEMENTS = 20000
 const MAX_ASPECT = 8
-// Толщина линий в пикселях рабочего растра: тоньше минимальной — линия рвётся при растеризации
-// и краска перетекает в соседнюю область; стандартная — для фигур без обводки
 const MIN_LINE = 3
 const DEFAULT_LINE = 6
-// Заливка темнее этого (яркость 0–1) — «чернила»: сама линия рисунка, а не область.
-// Так нарисованы трассированные картинки (potrace и т. п.): контуры — чёрные залитые фигуры
 const INK_LUMA = 0.35
-// Трассированная картинка: темнее — линия, светлее — бумага. Серый — разброс каналов не больше этого
 const TRACE_LUMA = 0.5
 const GRAY_SPREAD = 0.06
-// Прямоугольник без обводки почти во весь рисунок — фон фрейма Figma, не область для раскраски
 const BACKGROUND_COVER = 0.99
 
 const SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon'])
 const MASKS = new Set(['mask', 'clipPath'])
-// Неподдерживаемое содержимое, о пропуске которого стоит сказать игроку
 const SKIPPED_CONTENT = new Set(['text', 'image', 'foreignObject', 'use', 'switch'])
 
 const ATTRIBUTES = new Set([
@@ -50,7 +30,6 @@ const ATTRIBUTES = new Set([
   'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin', 'stroke-miterlimit', 'stroke-opacity',
   'clip-path', 'mask', 'maskUnits', 'maskContentUnits', 'clipPathUnits'
 ])
-// Ссылки — только на элементы внутри файла
 const LOCAL_URL = /^url\(\s*['"]?#[\w.:-]+['"]?\s*\)$/
 
 const MESSAGES = {
@@ -86,15 +65,11 @@ interface Box {
 
 interface Context {
   paint: Paint
-  // Есть transform у предков — геометрия в других координатах
   transformed: boolean
-  // Во сколько раз transform предков увеличивает размеры: толщина обводки задаётся в своих единицах
   scale: number
-  // Внутри mask/clipPath: фигуры — не рисунок, а форма маски, их не перекрашиваем
   inMask: boolean
 }
 
-// Фигура рисунка: перекрашивается после обхода, когда известен вид файла
 interface Shape {
   node: XastElement
   parent: XastElement
@@ -113,7 +88,6 @@ interface State {
   skipped: boolean
 }
 
-// По умолчанию в SVG заливка чёрная, обводки нет
 const DEFAULT_PAINT: Paint = { fill: 'black', stroke: 'none', strokeWidth: 1, fillOpacity: 1, strokeOpacity: 1 }
 
 function isElement(node: { type: string }): node is XastElement {
@@ -130,8 +104,6 @@ function hasPaint(value: string): boolean {
   return value !== 'none' && value !== 'transparent' && value !== ''
 }
 
-// Цвет как [r, g, b] (0–1). Названия и rgb() к этому моменту уже переведены в #hex (convertColors);
-// currentColor без color — чёрный. Градиенты и прочее — null
 function parseColor(value: string): [number, number, number] | null {
   if (value.toLowerCase() === 'currentcolor') return [0, 0, 0]
   const hex = /^#([\da-f]{3,8})$/i.exec(value)?.[1]
@@ -155,7 +127,6 @@ function isGray(value: string): boolean {
   return color !== null && Math.max(...color) - Math.min(...color) <= GRAY_SPREAD
 }
 
-// Увеличение размеров от transform (корень из модуля определителя матрицы)
 function transformScale(value: string): number {
   let [a, b, c, d] = [1, 0, 0, 1]
   for (const [, name, args] of value.matchAll(/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g)) {
@@ -178,7 +149,6 @@ function format(value: number): string {
   return String(Math.round(value * 1000) / 1000)
 }
 
-// Оставить только разрешённые атрибуты; из style — только mask-type (Figma пишет его так)
 function sanitizeAttributes(node: XastElement) {
   const attributes = node.attributes
   for (const [key, value] of Object.entries(attributes)) {
@@ -220,7 +190,6 @@ function coversBox(node: XastElement, box: Box): boolean {
     && x + width >= box.x + box.width - slackX && y + height >= box.y + box.height - slackY
 }
 
-// Фигура рисунка: запомнить для перекраски. false — невидима, убрать
 function collectShape(node: XastElement, parent: XastElement, paint: Paint, context: Context, state: State): boolean {
   const filled = node.name !== 'line' && hasPaint(paint.fill) && paint.fillOpacity > 0
   const stroked = hasPaint(paint.stroke) && paint.strokeOpacity > 0 && paint.strokeWidth > 0
@@ -230,7 +199,6 @@ function collectShape(node: XastElement, parent: XastElement, paint: Paint, cont
   return true
 }
 
-// Трассированная картинка: ни одной обводки, все заливки серые и среди них есть тёмные (линии)
 function isTraced(shapes: Shape[]): boolean {
   return shapes.every(shape => !shape.stroked && isGray(shape.paint.fill))
     && shapes.some(shape => isDark(shape.paint.fill))
@@ -244,7 +212,6 @@ function clearPaint(node: XastElement) {
   removeAttributes(node, ['opacity', 'fill-opacity', 'stroke-opacity', 'display', 'visibility'])
 }
 
-// Трассированная картинка: заливка → чёрная (линия) или белая (бумага), без обводок
 function binarizeShape({ node, paint }: Shape) {
   const color = parseColor(paint.fill)
   clearPaint(node)
@@ -253,7 +220,6 @@ function binarizeShape({ node, paint }: Shape) {
   delete node.attributes['stroke-width']
 }
 
-// Фигура → белая область с чёрной обводкой, тёмная заливка → чёрная линия. false — фигуру убрать
 function outlineShape({ node, paint, context, filled, stroked }: Shape, state: State): boolean {
   if (node.name === 'rect' && !stroked && !context.transformed && coversBox(node, state.box)) return false
   const ink = filled && paint.fillOpacity >= 0.5 && isDark(paint.fill)
@@ -263,7 +229,6 @@ function outlineShape({ node, paint, context, filled, stroked }: Shape, state: S
   attributes.fill = ink ? '#000' : filled ? '#fff' : 'none'
   if (stroked || !ink) {
     attributes.stroke = '#000'
-    // Толщина — в своих единицах фигуры: минимум пересчитывается через масштаб предков
     attributes['stroke-width'] = format(stroked
       ? Math.max(paint.strokeWidth, state.minLine / context.scale)
       : state.defaultLine / context.scale)
@@ -275,7 +240,6 @@ function outlineShape({ node, paint, context, filled, stroked }: Shape, state: S
   return true
 }
 
-// Перекрасить собранные фигуры; сколько осталось
 function recolorShapes(state: State): number {
   if (isTraced(state.shapes)) {
     state.shapes.forEach(binarizeShape)
@@ -308,7 +272,6 @@ function keepElement(node: XastElement, parent: XastElement, context: Context, s
   sanitizeAttributes(node)
   if (isHidden(node)) return false
 
-  // Из defs нужны только маски и обрезки — градиенты и прочее после перекраски не используются
   if (name === 'defs') {
     node.children = node.children.filter(child => isElement(child) && MASKS.has(child.name))
     walk(node, { ...context, inMask: true }, state)
@@ -358,7 +321,6 @@ function coloringPlugin(result: { width: number, height: number, notes: string[]
       const box = readBox(svg)
       const ratio = box.width / box.height
       if (ratio > MAX_ASPECT || ratio < 1 / MAX_ASPECT) fail(MESSAGES.aspect)
-      // Единиц viewBox на пиксель рабочего растра
       const unit = Math.max(box.width, box.height) / WORK_SIZE
       const state: State = { box, minLine: MIN_LINE * unit, defaultLine: DEFAULT_LINE * unit, elements: 0, shapes: [], skipped: false }
 
@@ -390,7 +352,6 @@ export function prepareSvgArt(source: string): SvgArt {
   const text = source.replace(/^﻿/, '')
   if (Buffer.byteLength(text) > MAX_SVG_BYTES) fail(MESSAGES.tooBig)
   if (!/<svg[\s>]/.test(text)) fail(MESSAGES.notSvg)
-  // Сущности DTD — путь к «бомбам» из вложенных подстановок; Figma их не пишет
   if (/<!ENTITY/i.test(text) || /<!DOCTYPE[^>]*\[/i.test(text)) fail(MESSAGES.entities)
 
   const result = { width: 0, height: 0, notes: [] as string[] }
@@ -402,13 +363,10 @@ export function prepareSvgArt(source: string): SvgArt {
         'removeXMLProcInst',
         'removeComments',
         'removeMetadata',
-        // Стили из <style> и style="" → атрибуты: перекраска видит настоящие заливки и обводки
         { name: 'inlineStyles', params: { onlyMatchedOnce: false } },
         'convertStyleToAttrs',
-        // Названия цветов и rgb() → #hex: тёмные заливки распознаются по одному формату
         { name: 'convertColors', params: { currentColor: false } },
         coloringPlugin(result),
-        // mergePaths склеил бы перекрывающиеся фигуры — обводка нижней проступила бы сквозь верхнюю
         { name: 'preset-default', params: { overrides: { mergePaths: false } } }
       ]
     }).data
@@ -418,4 +376,9 @@ export function prepareSvgArt(source: string): SvgArt {
   }
   if (Buffer.byteLength(svg) > MAX_SVG_BYTES) fail(MESSAGES.tooBig)
   return { svg, ...result }
+}
+
+export function artTitleFromFileName(name: unknown, fallback: string): string {
+  const title = typeof name === 'string' ? name.replace(/\.svg$/i, '').replace(/[\p{Cc}\s]+/gu, ' ').trim() : ''
+  return [...title].slice(0, MAX_ART_TITLE).join('') || fallback
 }

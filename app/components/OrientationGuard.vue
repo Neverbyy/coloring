@@ -1,6 +1,4 @@
 <template>
-  <!-- На телефоне игра только вертикальная: в горизонтали закрываем экран подсказкой.
-       Только CSS — подсказка видна сразу, ещё до загрузки скриптов -->
   <div class="orientation-guard" role="alert">
     <span class="orientation-guard__phone" aria-hidden="true" />
     <p class="orientation-guard__title">Поверни телефон</p>
@@ -28,7 +26,6 @@
   }
 }
 
-// Телефон лежит горизонтально и поворачивается вертикально
 .orientation-guard__phone {
   width: 112px;
   height: 64px;

@@ -3,8 +3,6 @@ export interface CountryOption {
   name: string
 }
 
-// Список строится на сервере и уходит в payload: названия из ICU в Node и браузере
-// могут отличаться, а так гидратация не расходится
 export function useCountryOptions() {
   return useState<CountryOption[]>('country-options', () => {
     const names = new Intl.DisplayNames(['ru'], { type: 'region' })
@@ -14,15 +12,19 @@ export function useCountryOptions() {
   })
 }
 
+export function useCountryName() {
+  const options = useCountryOptions()
+  const names = computed(() => new Map(options.value.map(option => [option.code, option.name])))
+  return (code: string) => names.value.get(code) ?? code
+}
+
 export function detectCountry(): string {
   const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
   for (const language of languages) {
     try {
       const region = new Intl.Locale(language).maximize().region
       if (region && isCountryCode(region)) return region
-    } catch {
-      // некорректный тег языка — пробуем следующий
-    }
+    } catch {}
   }
   return ''
 }

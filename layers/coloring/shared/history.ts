@@ -1,30 +1,12 @@
 import { PALETTE } from './palette'
 
-// Общие для клиента и сервера типы истории рисунка.
-// Рабочее пространство — бумага (см. paperGeometry): длинная сторона картинки на ней — WORK_SIZE точек,
-// в координатах бумаги записаны операции.
-// Сегмент операции определяется по её точке, а не по номеру: растеризация картинки в разных
-// браузерах чуть отличается, и номера областей могли бы разъехаться.
-//
-// Хранение: рисунок = базовое изображение (PNG) + последние операции после него.
-// Отменить можно не меньше HISTORY_LIMIT последних действий; более старые «запекаются»
-// в базовое изображение пачками по BAKE_CHUNK. На сервере это одна строка на рисунок
 export const WORK_SIZE = 1024
-// Бумага = картинка + поля вокруг: рисовать можно во всей рамке, а рамка бывает и шире картинки
-// (компьютер), и выше (телефон вертикально). Размер бумаги зависит только от арта, не от экрана,
-// поэтому история одинакова на любом устройстве. Бумага покрывает рамки с соотношением
-// сторон области рисунка от 0.5 (высокая) до PAPER_MAX_ASPECT (широкая) — шире и выше экран
-// рисования не даёт (см. .board). Вертикальный запас больше: под кнопками отмены рамка ниже рисунка
 export const PAPER_MAX_ASPECT = 1.6
 export const PAPER_MIN_ASPECT = 0.4
-// Наибольшая координата на бумаге любого арта
 export const MAX_COORD = Math.ceil(WORK_SIZE / PAPER_MIN_ASPECT)
 export const HISTORY_LIMIT = 50
 export const BAKE_CHUNK = 20
-// Снимок холста в памяти браузера не реже чем через столько операций: отмена = снимок + доигрывание
 export const SNAPSHOT_INTERVAL = 20
-// Предел операций в строке на сервере — с запасом на случай, если базовое изображение
-// ещё не дошло (нет сети)
 export const MAX_STORED_OPS = 300
 export const MAX_STROKE_POINTS = 5000
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024
@@ -32,29 +14,19 @@ export const MAX_THUMBNAIL_BYTES = 512 * 1024
 
 export type StrokeTool = 'brush' | 'pencil' | 'eraser'
 
-// p — точки штриха подряд: x1, y1, x2, y2, …
 export interface StrokeOp { t: 'stroke', tool: StrokeTool, c: string | null, p: number[] }
-// Удержание кисти или карандаша — заливка сегмента в точке p: кисть — ровным цветом,
-// карандаш — с фактурой. Без tool — кисть (так записаны заливки до появления поля)
 export interface FillOp { t: 'fill', tool?: Exclude<StrokeTool, 'eraser'>, c: string, p: [number, number] }
-// Удержание резинки — очистка сегмента в точке p
 export interface ClearOp { t: 'clear', p: [number, number] }
 export type HistoryOp = StrokeOp | FillOp | ClearOp
 
-// Номера операций сквозные: первая операция рисунка — 1, «запекание» их не сбрасывает
 export interface DrawingState {
-  // Сколько первых операций уже в базовом изображении
   baseSeq: number
-  // Есть ли базовое изображение (иначе база — чистый холст)
   hasBase: boolean
-  // Операции после базы: номера baseSeq + 1 … baseSeq + ops.length
   ops: HistoryOp[]
-  // Позиция undo/redo: baseSeq ≤ cursor ≤ baseSeq + ops.length
   cursor: number
   progress: number
 }
 
-// Сохранение: заменить операции после fromSeq на ops и поставить курсор (undo/redo)
 export interface HistorySave {
   fromSeq: number
   ops: HistoryOp[]
@@ -62,7 +34,6 @@ export interface HistorySave {
   progress: number
 }
 
-// Ответ сервера при расхождении (409): что у него сейчас
 export interface HistoryConflict {
   baseSeq: number
   head: number
@@ -71,7 +42,6 @@ export interface HistoryConflict {
 export interface PaperGeometry {
   width: number
   height: number
-  // Где на бумаге картинка
   art: { x: number, y: number, width: number, height: number }
 }
 
@@ -104,7 +74,6 @@ function isIndex(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) >= 0
 }
 
-// Проверка операции из недоверенного источника. Возвращает чистый объект без лишних полей
 export function parseHistoryOp(value: unknown): HistoryOp | null {
   if (!value || typeof value !== 'object') return null
   const op = value as Record<string, unknown>
@@ -136,7 +105,6 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
   return null
 }
 
-// Тело сохранения истории из недоверенного источника: готовый объект или текст ошибки
 export function parseHistorySave(value: unknown): HistorySave | string {
   const body = value && typeof value === 'object' ? value as Record<string, unknown> : {}
   const { fromSeq, cursor, progress } = body

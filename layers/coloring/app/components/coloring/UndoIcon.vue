@@ -1,5 +1,4 @@
 <template>
-  <!-- Стрелка из макета; цвет контура — currentColor (чёрный или #BCD5DB у неактивной) -->
   <svg
     width="100%"
     height="100%"

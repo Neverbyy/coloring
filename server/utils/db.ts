@@ -3,7 +3,8 @@ import postgres from 'postgres'
 
 let db: PostgresJsDatabase | undefined
 
-// Одно подключение на экземпляр сервера (на Vercel — на «тёплую» функцию)
+type ClientOptions = postgres.Options<Record<string, postgres.PostgresType>> & { max_pipeline: number }
+
 export function useDb(): PostgresJsDatabase {
   if (db) return db
 
@@ -12,8 +13,11 @@ export function useDb(): PostgresJsDatabase {
     throw createError({ statusCode: 500, statusMessage: 'База данных не настроена (NUXT_DATABASE_URL)' })
   }
 
-  // Transaction pooler Supabase не поддерживает prepared statements
-  const client = postgres(databaseUrl, { prepare: false, max: 5, idle_timeout: 20 })
-  db = drizzle(client)
+  const client = postgres(databaseUrl, { prepare: false, max: 5, idle_timeout: 20, max_pipeline: 0 } as ClientOptions)
+  const transactions = drizzle(postgres(databaseUrl, { prepare: false, max: 3, idle_timeout: 20, max_pipeline: 1 } as ClientOptions))
+
+  const instance = drizzle(client)
+  instance.transaction = transactions.transaction.bind(transactions)
+  db = instance
   return db
 }

@@ -1,6 +1,4 @@
 <script setup lang="ts">
-// Включить и выключить фоновую музыку. Значок — в цветах значка дома: оранжевый динамик,
-// тёмные волны звука; выключено — крестик вместо волн
 const audio = useAudioStore()
 </script>
 
@@ -26,7 +24,6 @@ const audio = useAudioStore()
 </template>
 
 <style scoped lang="scss">
-// Как кнопки пагинации галереи: белая, в голубой рамке
 .music-toggle {
   display: grid;
   place-items: center;

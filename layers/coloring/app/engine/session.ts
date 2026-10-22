@@ -6,22 +6,15 @@ import { HistorySync, type SyncStatus } from './sync'
 
 export interface DrawingSessionOptions {
   artId: string
-  // Ключ localStorage для неотправленного (pendingStorageKey)
   storageKey: string
   map: SegmentMap
   paintCanvas: HTMLCanvasElement
   previewCanvas: HTMLCanvasElement
-  // Изменились рисунок, процент или доступность отмены; byPlayer — действием игрока,
-  // а не загрузкой
   onChange: (byPlayer: boolean) => void
   onStatus: (status: SyncStatus) => void
-  // Сессия на сервере закончилась — сохранять некуда
   onUnauthorized: () => void
 }
 
-// Открытый рисунок: движок (холсты), история (undo/redo, «запекание») и автосохранение,
-// связанные вместе. Любое действие игрока проходит через commit/undo/redo — история,
-// сохранение и отчёт об изменении не расходятся. Без Vue: компонент только передаёт ввод
 export class DrawingSession {
   readonly engine: ColoringEngine
   readonly history: ColoringHistory
@@ -63,14 +56,12 @@ export class DrawingSession {
     return this.history.canRedo
   }
 
-  // Состояние с сервера плюс неотправленное из прошлого визита — на холст
   async load(state: DrawingState, base: Blob | null) {
     this.history.load(await this.sync.restore(state, base))
     await this.history.renderAt(this.history.cursor)
     this.options.onChange(false)
   }
 
-  // Новое действие игрока (уже нарисовано на холсте)
   commit(op: HistoryOp) {
     const truncatedTo = this.history.canRedo ? this.history.cursor : undefined
     this.history.push(op)
@@ -96,7 +87,6 @@ export class DrawingSession {
     this.sync.queueThumbnail(image)
   }
 
-  // Уход с рисунка: последняя отправка; lastThumbnail — миниатюра, собранная напоследок
   dispose(lastThumbnail?: Promise<Blob | null>) {
     this.sync.dispose(lastThumbnail)
   }

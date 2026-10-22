@@ -1,5 +1,4 @@
 <script setup lang="ts">
-// Короткое сообщение внизу экрана: гаснет само, закрывается тапом
 const props = defineProps<{ message: string | null, tone?: 'error' | 'info' }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -14,7 +13,6 @@ onBeforeUnmount(() => clearTimeout(timer))
 </script>
 
 <template>
-  <!-- Область aria-live есть всегда: читалка объявляет то, что в ней появляется -->
   <div class="notice-region" aria-live="polite">
     <Transition name="notice">
       <button

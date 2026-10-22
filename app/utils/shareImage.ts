@@ -1,6 +1,3 @@
-// Отдать картинку игроку. На телефоне — системное окно «Поделиться» (в нём же «Сохранить
-// изображение»): сохранить прямо в галерею без подтверждения браузер не позволяет.
-// На компьютере и где «Поделиться» с файлами нет — скачивание файла
 export async function shareImage(image: Blob, title: string): Promise<void> {
   const file = new File([image], `${title}.png`, { type: 'image/png' })
 
@@ -9,7 +6,6 @@ export async function shareImage(image: Blob, title: string): Promise<void> {
       await navigator.share({ files: [file], title })
       return
     } catch (error) {
-      // Игрок закрыл окно — это не ошибка. Остальные сбои — пробуем скачать
       if ((error as DOMException | null)?.name === 'AbortError') return
     }
   }
@@ -21,6 +17,5 @@ export async function shareImage(image: Blob, title: string): Promise<void> {
   document.body.append(link)
   link.click()
   link.remove()
-  // Отзываем не сразу: браузер может начать загрузку не мгновенно
   setTimeout(() => URL.revokeObjectURL(url), 30_000)
 }

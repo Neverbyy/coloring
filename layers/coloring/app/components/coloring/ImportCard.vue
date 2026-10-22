@@ -2,13 +2,11 @@
 defineProps<{ loading?: boolean }>()
 const emit = defineEmits<{ select: [file: File] }>()
 
-// Файл тащат над карточкой (компьютер)
 const dragging = ref(false)
 
 function onChange(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
-  // Сбрасываем, чтобы повторный выбор того же файла снова вызвал change
   input.value = ''
   if (file) emit('select', file)
 }
@@ -52,7 +50,6 @@ function onDrop(event: DragEvent) {
   cursor: pointer;
   transition: transform 0.25s $lift-easing, border-color 0.15s;
 
-  // Под мышью — как у карточек артов, плюс поворачивается. Раньше pressable: нажатие главнее
   @include on-hover {
     transform: translateY(-6px);
 
@@ -63,7 +60,6 @@ function onDrop(event: DragEvent) {
 
   @include pressable;
 
-  // Только фокус с клавиатуры: после касания и выбора файла фокус остаётся на поле — кольцо не нужно
   &:has(input:focus-visible) {
     @include frame-focus;
   }

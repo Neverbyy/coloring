@@ -1,5 +1,5 @@
-// Все страницы — только после входа, кроме отмеченных guestOnly (вход)
 export default defineNuxtRouteMiddleware(async (to) => {
+  if (to.meta.admin) return
   const auth = useAuthStore()
   if (!auth.loaded) await auth.fetchUser()
 

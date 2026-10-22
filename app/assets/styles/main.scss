@@ -9,14 +9,16 @@ html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   overscroll-behavior: none;
+}
+
+html:not(.admin) {
   scrollbar-width: none;
 }
 
-html::-webkit-scrollbar {
+html:not(.admin)::-webkit-scrollbar {
   display: none;
 }
 
-// Игра: без скролла страницы, выделения, меню по долгому тапу и зума двойным тапом
 body {
   height: 100%;
   margin: 0;
@@ -34,7 +36,6 @@ body {
   touch-action: manipulation;
 }
 
-// В iOS поле с user-select: none не даёт вводить текст
 input,
 textarea,
 select {
@@ -45,6 +46,22 @@ select {
 img {
   -webkit-user-drag: none;
   pointer-events: none;
+}
+
+html.admin {
+  height: auto;
+  overscroll-behavior: auto;
+
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow: auto;
+    -webkit-touch-callout: default;
+    -webkit-user-select: text;
+    user-select: text;
+    overscroll-behavior: auto;
+    touch-action: auto;
+  }
 }
 
 h1,

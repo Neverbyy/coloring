@@ -11,21 +11,13 @@ const emit = defineEmits<{
   progress: [value: number]
   history: [canUndo: boolean, canRedo: boolean]
   status: [status: SyncStatus]
-  // Рисунок только что стал закрашен на 100% действием игрока
   completed: []
 }>()
 
-// Удержание без движения столько — заливка (или очистка резинкой) всего сегмента
 const HOLD_MS = 450
-// Сдвиг пальца больше этого (CSS px) — это штрих, а не удержание
 const HOLD_TOLERANCE = 10
-// Картинки (миниатюра, PNG для камеры) готовим в паузе: сборка и кодирование нагружают
-// браузер, и посреди рисования это заметно
 const IMAGES_IDLE_MS = 1500
-// Звук инструмента — только пока им водят по холсту: столько без движения — тишина
 const STROKE_SOUND_IDLE_MS = 150
-// Длинная сторона миниатюры для галереи. Миниатюра — вся бумага с полями (картинка в ней
-// ~40% по высоте), так картинка на карточке выходит ~290px — с запасом на плотные экраны
 const THUMBNAIL_SIZE = 720
 
 const tools = useColoringToolsStore()
@@ -41,15 +33,11 @@ const lineArt = ref<HTMLImageElement | null>(null)
 const ready = ref(false)
 const failed = ref(false)
 const busy = ref(false)
-// Кольцо удержания под пальцем (координаты внутри холста)
 const hold = ref<{ x: number, y: number } | null>(null)
 
 const ratio = computed(() => props.art.width / props.art.height)
-// Бумага с полями вокруг картинки: на экране видна та её часть, что попадает в рамку
 const paper = computed(() => paperGeometry(props.art.width, props.art.height))
 const paperStyle = computed(() => paperLayout(props.art.width, props.art.height))
-// Пока грузится состояние, на месте холста — миниатюра рисунка (она уже есть у браузера):
-// рисунок виден сразу, а не белым
 const placeholder = computed(() => previews.get(props.art.id)?.thumbnail ?? props.art.thumbnail)
 const artRegion = computed(() => {
   const { art } = paper.value
@@ -60,18 +48,14 @@ let session: DrawingSession | null = null
 let pointerId: number | null = null
 let holdStart: { clientX: number, clientY: number, x: number, y: number } | null = null
 let holdTimer: ReturnType<typeof setTimeout> | undefined
-// Положение холста на экране — замеряется в начале штриха, а не на каждое движение
 let canvasRect: DOMRect | null = null
-// Точки касания копятся и рисуются раз в кадр
 let pendingPoints: number[] = []
 let frame = 0
 let lastProgress = 0
 let version = 0
 let exported: { version: number, image: Blob } | null = null
 let imagesTimer: ReturnType<typeof setTimeout> | undefined
-// Рисунок менялся игроком, а миниатюра ещё старая
 let thumbnailStale = false
-// Инструмент текущего штриха и его звук
 let strokeTool: StrokeTool = 'brush'
 let strokeSound: LoopHandle | null = null
 let strokeSoundTimer: ReturnType<typeof setTimeout> | undefined
@@ -81,7 +65,6 @@ async function init() {
   session?.dispose()
   session = null
   try {
-    // Состояние и база — параллельно; обычно уже в пути с нажатия на карточку галереи
     const drawingPromise = fetchDrawing(queryClient, props.art)
     const image = lineArt.value!
     await image.decode()
@@ -101,17 +84,7 @@ async function init() {
 
     const { state, base } = await drawingPromise
     await current.load(state, base)
-    if (import.meta.dev) {
-      // Для проверок Playwright; segment — повторная разметка (замер времени)
-      (window as unknown as { __coloring?: unknown }).__coloring = {
-        engine: current.engine,
-        history: current.history,
-        map,
-        segment: () => segmentArt(image, paper.value)
-      }
-    }
     ready.value = true
-    // Рисунок начат, а миниатюры у галереи нет (сброшена или не дошла) — сделаем заново
     if (!props.art.thumbnail && current.history.head > 0) thumbnailStale = true
   } catch (error) {
     if (errorStatus(error) === 401) {
@@ -122,7 +95,6 @@ async function init() {
   }
 }
 
-// Сообщить странице прогресс и доступность отмены/повтора; в паузе — обновить картинки
 function report(byPlayer: boolean) {
   if (!session) return
   const progress = session.progress
@@ -141,9 +113,6 @@ function whenIdle(task: () => void) {
   else task()
 }
 
-// В паузе: миниатюра для галереи и (на телефоне) картинка для «камеры». На телефоне её нужно
-// иметь заранее — Safari не даёт открыть «Поделиться» после долгого ожидания внутри нажатия.
-// На компьютере файл скачивается, и картинка собирается по нажатию
 function prepareImages() {
   if (session?.engine.drawing) return
   if (isTouchDevice()) exportImage().catch(() => {})
@@ -153,7 +122,6 @@ function prepareImages() {
   }).catch(() => {})
 }
 
-// Миниатюра сразу попадает в галерею этой вкладки, на сервер — вместе с автосохранением
 async function updateThumbnail(): Promise<Blob | null> {
   if (!session || !lineArt.value) return null
   thumbnailStale = false
@@ -190,7 +158,6 @@ function onPointerDown(event: PointerEvent) {
 
 function onPointerMove(event: PointerEvent) {
   if (event.pointerId !== pointerId || !session?.engine.drawing) return
-  // Промежуточные точки (getCoalescedEvents) — для гладкой линии; рисуем их раз в кадр
   const coalesced = event.getCoalescedEvents?.() ?? []
   for (const point of coalesced.length ? coalesced : [event]) pendingPoints.push(...toWork(point))
   if (!frame) frame = requestAnimationFrame(onFrame)
@@ -200,13 +167,11 @@ function onPointerMove(event: PointerEvent) {
   }
 }
 
-// Кадр: нарисовать накопленные точки; штрих двигается — звучит его инструмент
 function onFrame() {
   frame = 0
   if (drawPending() && session?.engine.drawing) strokeMoved()
 }
 
-// false — рисовать было нечего
 function drawPending(): boolean {
   cancelAnimationFrame(frame)
   frame = 0
@@ -245,8 +210,6 @@ function cancelHold() {
   hold.value = null
 }
 
-// Палец держат на месте: весь сегмент заливается цветом (резинка — очищает).
-// Движение до отпускания пальца после этого не рисует
 function fillByHold() {
   const start = holdStart
   cancelHold()
@@ -262,7 +225,6 @@ function fillByHold() {
   session.commit(op)
 }
 
-// Отмена и повтор — не посреди штриха и не пока идёт предыдущая отмена
 function canEditHistory(): boolean {
   return ready.value && !busy.value && !!session && !session.engine.drawing
 }
@@ -281,7 +243,6 @@ function redo() {
   if (canEditHistory()) session!.redo()
 }
 
-// PNG результата без интерфейса; готовый берём из кэша, если рисунок с тех пор не менялся
 async function exportImage(): Promise<Blob> {
   if (!session || !lineArt.value) throw new Error('Рисунок ещё не загружен')
   if (exported?.version === version) return exported.image
@@ -306,7 +267,6 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   init()
-  // Звуки рисования и успеха — заранее, в простое (у карандаша 1.5 МБ)
   whenIdle(() => preloadSounds(Object.values(COLORING_SOUNDS)))
 })
 
@@ -317,7 +277,6 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(frame)
   stopStrokeSound()
   forgetDrawing(queryClient, props.art.id)
-  // Ушли сразу после штриха — миниатюра ещё старая: делаем последнюю и отдаём на отправку
   session?.dispose(thumbnailStale ? updateThumbnail() : undefined)
 })
 
@@ -335,7 +294,6 @@ defineExpose({ undo, redo, exportImage })
     @pointercancel="onPointerUp"
     @lostpointercapture="onPointerUp"
   >
-    <!-- Бумага выходит за картинку во все стороны; лишнее обрезает рамка -->
     <div class="art-canvas__paper" :style="paperStyle">
       <Transition name="art-canvas-placeholder">
         <img
@@ -349,7 +307,6 @@ defineExpose({ undo, redo, exportImage })
       <canvas ref="paintCanvas" class="art-canvas__layer" />
       <canvas ref="previewCanvas" class="art-canvas__layer" />
     </div>
-    <!-- Контур поверх краски: multiply делает белое прозрачным, линии остаются чёткими -->
     <img ref="lineArt" class="art-canvas__lines" :src="art.image" :alt="art.title" draggable="false">
     <span
       v-if="hold"
@@ -365,7 +322,6 @@ defineExpose({ undo, redo, exportImage })
 </template>
 
 <style scoped lang="scss">
-// Размер — как у картинки, вписанной в рамку (родитель — контейнер размеров)
 .art-canvas {
   position: relative;
   width: min(100cqw, calc(100cqh * var(--ratio)));
@@ -377,7 +333,6 @@ defineExpose({ undo, redo, exportImage })
   position: absolute;
 }
 
-// Миниатюра-заглушка гаснет, когда холст готов: под ней уже то же самое, без скачка
 .art-canvas-placeholder-leave-active {
   transition: opacity 0.15s;
 }
@@ -400,7 +355,6 @@ defineExpose({ undo, redo, exportImage })
   pointer-events: none;
 }
 
-// Кольцо удержания: успевает замкнуться ровно к заливке
 .art-canvas__hold {
   position: absolute;
   width: 72px;

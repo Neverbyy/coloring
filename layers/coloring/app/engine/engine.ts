@@ -3,14 +3,9 @@ import type { Box, Segment, SegmentMap } from './segmentation'
 import { context2d, createCanvas } from './canvas'
 import { TOOL_STYLES, createPencilTexture } from './textures'
 
-// Касание попало на толстую линию — ищем ближайший сегмент в этом радиусе
 const SNAP_RADIUS = 10
-// Точки штриха ближе друг к другу не записываем
 const MIN_POINT_DISTANCE = 2
-// Пиксель закрашен, если непрозрачность не ниже (края штриха сглажены — полупрозрачные)
 const PAINTED_ALPHA = 24
-// Сегмент, закрашенный на столько, считается закрашенным полностью:
-// пальцем не дотянуться до каждого пикселя у контура
 const SEGMENT_DONE = 0.95
 
 interface ActiveStroke {
@@ -18,11 +13,9 @@ interface ActiveStroke {
   segment: Segment
   lastX: number
   lastY: number
-  // Где штрих уже нарисован — эту область переносим на холст в конце
   dirty: Box | null
 }
 
-// toBlob копирует холст в момент вызова — дальнейшее рисование в результат не попадёт
 function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
     canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Картинка не создана')), type, quality)
@@ -48,9 +41,6 @@ function drawRegion(target: CanvasRenderingContext2D, source: HTMLCanvasElement,
   target.drawImage(source, box.x, box.y, box.w, box.h, box.x, box.y, box.w, box.h)
 }
 
-// Холсты: paint — краска (видна игроку), preview — текущий штрих до отпускания пальца.
-// Контур картинки лежит поверх обоих (multiply), поэтому краска не закрывает линии.
-// Штрих обрезается маской сегмента, в котором начался, — за линию он не выйдет
 export class ColoringEngine {
   readonly width: number
   readonly height: number
@@ -58,17 +48,11 @@ export class ColoringEngine {
   private readonly preview: CanvasRenderingContext2D
   private readonly stroke: CanvasRenderingContext2D
   private readonly scratch: CanvasRenderingContext2D
-  // Холст для подсчёта заполнения. С видимого холста пиксели не читаем: после частых чтений
-  // Chrome переводит холст с видеокарты на процессор, и рисование на большой бумаге тормозит
   private readonly meter: CanvasRenderingContext2D
-  // Холст для итоговой картинки и миниатюры — один на все сборки
   private readonly output: CanvasRenderingContext2D
   private readonly texture: CanvasPattern
   private readonly masks = new Map<number, HTMLCanvasElement>()
-  // Доля закрашенных пикселей каждого сегмента
   private readonly coverage: Float64Array
-  // Где лежат сегменты, входящие в процент (всё, кроме фона): заполнение считаем только тут,
-  // а не по всей бумаге с полями
   private readonly countedBox: Box | null
   private active: ActiveStroke | null = null
 
@@ -97,7 +81,6 @@ export class ColoringEngine {
     this.output = context2d(createCanvas(1, 1))
   }
 
-  // Невидимый движок на тех же сегментах — собрать состояние истории, не трогая экран
   static offscreen(map: SegmentMap): ColoringEngine {
     return new ColoringEngine(map, createCanvas(map.width, map.height), createCanvas(map.width, map.height))
   }
@@ -130,7 +113,6 @@ export class ColoringEngine {
     return segments[best] ?? null
   }
 
-  // Живой штрих: начало. false — касание вне раскрашиваемых областей
   beginStroke(tool: StrokeTool, color: string, x: number, y: number): boolean {
     this.cancelStroke()
     const segment = this.segmentAt(x, y)
@@ -149,7 +131,6 @@ export class ColoringEngine {
     return true
   }
 
-  // Продолжение штриха пачкой точек (x1, y1, x2, y2, …): одна линия и одна перерисовка на кадр
   extendStroke(points: number[]) {
     const active = this.active
     if (!active) return
@@ -167,7 +148,6 @@ export class ColoringEngine {
     if (path.length > 2) this.drawPath(path)
   }
 
-  // Палец отпущен: штрих переносится на холст и становится операцией истории
   endStroke(measure = true): StrokeOp | null {
     const active = this.active
     if (!active) return null
@@ -179,16 +159,12 @@ export class ColoringEngine {
     return active.op
   }
 
-  // Удержание превратилось в заливку — штрих не нужен.
-  // Стёртое резинкой не возвращается: очистка сегмента всё равно сотрёт его целиком
   cancelStroke() {
     if (!this.active) return
     this.clearStroke(this.active)
     this.active = null
   }
 
-  // Выполнить операцию истории (новое действие, повтор, восстановление).
-  // При доигрывании многих операций заполнение считают один раз в конце (measureAll)
   apply(op: HistoryOp, measure = true): Segment | null {
     if (op.t === 'stroke') {
       const segment = this.segmentAt(op.p[0]!, op.p[1]!)
@@ -215,31 +191,25 @@ export class ColoringEngine {
     this.coverage.fill(0)
   }
 
-  // Холст из снимка истории
   restore(image: CanvasImageSource) {
     this.reset()
     this.paint.drawImage(image, 0, 0, this.width, this.height)
   }
 
-  // Снимок краски (PNG с прозрачностью) — для истории и базового изображения
   snapshot(): Promise<Blob> {
     return toBlob(this.paint.canvas, 'image/png')
   }
 
-  // Картинка результата без интерфейса (PNG): область картинки на бумаге — белый фон, краска, контур
   exportImage(lineArt: CanvasImageSource, art: Box): Promise<Blob> {
     return toBlob(this.composite(lineArt, art, art, 1), 'image/png')
   }
 
-  // Миниатюра для галереи: вся бумага с полями (карточка раскладывает её как экран рисования),
-  // длинная сторона maxSide, JPEG (белый фон — без прозрачности)
   thumbnail(lineArt: CanvasImageSource, art: Box, maxSide: number): Promise<Blob> {
     const paper = { x: 0, y: 0, w: this.width, h: this.height }
     const scale = Math.min(1, maxSide / Math.max(paper.w, paper.h))
     return toBlob(this.composite(lineArt, art, paper, scale), 'image/jpeg', 0.85)
   }
 
-  // Процент заполнения 0–100: по площади областей, фон не учитывается
   progress(): number {
     let total = 0
     let painted = 0
@@ -252,13 +222,10 @@ export class ColoringEngine {
     return total > 0 ? (painted / total) * 100 : 0
   }
 
-  // Пересчитать заполнение всех сегментов (после восстановления истории)
   measureAll() {
     this.measure()
   }
 
-  // Заполнение одного сегмента или (без аргумента) всех, кроме фона: фон в процент не входит,
-  // а по площади он — почти вся бумага
   private measure(segment?: Segment) {
     if (segment?.background) return
     const box = segment ? segment.box : this.countedBox
@@ -284,12 +251,10 @@ export class ColoringEngine {
     }
   }
 
-  // Область crop бумаги в масштабе scale; контур картинки ложится на её место art
   private composite(lineArt: CanvasImageSource, art: Box, crop: Box, scale: number): HTMLCanvasElement {
     const { output } = this
     const width = Math.round(crop.w * scale)
     const height = Math.round(crop.h * scale)
-    // Смена размера очищает холст и сбрасывает его настройки
     output.canvas.width = width
     output.canvas.height = height
     output.fillStyle = '#ffffff'
@@ -300,8 +265,6 @@ export class ColoringEngine {
     return output.canvas
   }
 
-  // Нарисовать часть штриха (точки подряд; одна точка — круглый след) и перерисовать её область.
-  // area — готовая область перерисовки (повтор целого штриха); иначе считается по точкам
   private drawPath(points: number[], area?: Box) {
     const active = this.active!
     const style = TOOL_STYLES[active.op.tool]
@@ -309,8 +272,6 @@ export class ColoringEngine {
     const radius = style.width / 2
     const { box } = active.segment
     context.save()
-    // Только в рамке сегмента: после штриха холст очищается по ней, а след за её краем
-    // остался бы и попал в следующий штрих соседнего сегмента чужим цветом
     context.beginPath()
     context.rect(box.x, box.y, box.w, box.h)
     context.clip()
@@ -346,8 +307,6 @@ export class ColoringEngine {
     this.flush(area ?? { x: minX - pad, y: minY - pad, w: maxX - minX + pad * 2, h: maxY - minY + pad * 2 })
   }
 
-  // Перерисовать область штриха: обрезать маской сегмента, наложить фактуру;
-  // у резинки — сразу стереть краску в этой области
   private flush(area: Box) {
     const active = this.active!
     const rounded = {
@@ -366,14 +325,12 @@ export class ColoringEngine {
     const target = eraser ? this.scratch : this.preview
 
     target.save()
-    // destination-in в части браузеров действует на весь холст — ограничиваем областью
     target.beginPath()
     target.rect(box.x, box.y, box.w, box.h)
     target.clip()
     target.clearRect(box.x, box.y, box.w, box.h)
     drawRegion(target, this.stroke.canvas, box)
     target.globalCompositeOperation = 'destination-in'
-    // Маска — только кусок под областью: у фона она размером со всю бумагу
     target.drawImage(this.mask(active.segment), box.x - segmentBox.x, box.y - segmentBox.y, box.w, box.h, box.x, box.y, box.w, box.h)
     if (style.textured) this.applyTexture(target, box)
     target.restore()
@@ -381,7 +338,6 @@ export class ColoringEngine {
     if (eraser) this.erase(() => drawRegion(this.paint, this.scratch.canvas, box))
   }
 
-  // Фактура поверх уже нарисованного цвета в области: прозрачные места остаются прозрачными
   private applyTexture(context: CanvasRenderingContext2D, box: Box) {
     context.globalCompositeOperation = 'source-atop'
     context.fillStyle = this.texture
@@ -406,7 +362,6 @@ export class ColoringEngine {
     this.erase(() => this.paint.drawImage(this.mask(segment), segment.box.x, segment.box.y))
   }
 
-  // Стереть краску там, где draw рисует непрозрачное
   private erase(draw: () => void) {
     this.paint.save()
     this.paint.globalCompositeOperation = 'destination-out'
@@ -420,7 +375,6 @@ export class ColoringEngine {
     this.preview.clearRect(box.x, box.y, box.w, box.h)
   }
 
-  // Маска сегмента: непрозрачно там, где разрешена краска
   private mask(segment: Segment): HTMLCanvasElement {
     const cached = this.masks.get(segment.id)
     if (cached) return cached

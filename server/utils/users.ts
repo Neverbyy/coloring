@@ -5,13 +5,10 @@ function toSessionUser(row: UserRow): SessionUser {
   return { id: row.id, username: row.username, country: row.country }
 }
 
-// Вход без пароля: имя уникально на весь сервис. Совпали имя и страна — это тот же игрок,
-// имени нет — создаём, имя занято игроком из другой страны — отказ
 export async function findOrCreateUser(username: string, country: string): Promise<SessionUser> {
   const db = useDb()
   const key = usernameKey(username)
 
-  // Вторая попытка — на случай гонки: имя заняли между проверкой и вставкой
   for (let attempt = 0; attempt < 2; attempt++) {
     const [existing] = await db.select().from(users).where(eq(users.usernameKey, key)).limit(1)
     if (existing) {

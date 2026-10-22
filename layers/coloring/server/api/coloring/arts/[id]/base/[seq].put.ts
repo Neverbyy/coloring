@@ -1,6 +1,5 @@
 import { MAX_IMAGE_BYTES } from '../../../../../../shared/history'
 
-// Базовое изображение рисунка: всё до операции seq. seq = 0 с пустым телом — чистый холст
 export default defineEventHandler(async (event) => {
   const { user, artId } = await requireDrawingRequest(event)
   const seq = Number(getRouterParam(event, 'seq'))

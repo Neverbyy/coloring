@@ -10,7 +10,9 @@
     "typecheck": "nuxt typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "admin:create": "node scripts/create-admin.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@pinia/nuxt": "^1.0.3",
@@ -29,6 +31,7 @@
     "drizzle-kit": "^0.31.11",
     "sass": "^1.105.2",
     "typescript": "^5.9.3",
+    "vitest": "^5.0.3",
     "vue-tsc": "^3.3.13"
   }
 }

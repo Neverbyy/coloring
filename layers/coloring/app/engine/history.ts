@@ -3,35 +3,24 @@ import type { ColoringEngine } from './engine'
 
 export interface HistoryState {
   baseSeq: number
-  // PNG краски после baseSeq операций; null — чистый холст
   baseImage: Blob | null
   ops: HistoryOp[]
   cursor: number
 }
 
 export interface HistoryOptions {
-  // Невидимый движок: на нём собирается новое базовое изображение, экран не трогается
   createScratch: () => ColoringEngine
-  // Старые операции «запечены» в новое базовое изображение — отправить на сервер
   onBase: (seq: number, image: Blob) => void
 }
 
-// Журнал операций с курсором (undo/redo). Номера операций сквозные:
-// ops[i] — операция baseSeq + i + 1, курсор — сквозной номер последней применённой.
-// Отменить можно не меньше HISTORY_LIMIT действий: когда операций становится
-// HISTORY_LIMIT + BAKE_CHUNK, самые старые BAKE_CHUNK «запекаются» в базовое изображение.
-// Для быстрой отмены в памяти держатся снимки холста — не реже чем через SNAPSHOT_INTERVAL операций
 export class ColoringHistory {
   baseSeq = 0
   baseImage: Blob | null = null
   ops: HistoryOp[] = []
   cursor = 0
-  // Снимки краски в памяти (PNG — компактнее растра): сквозной номер → картинка
   private readonly snapshots = new Map<number, Blob>()
-  // Растёт при отбрасывании отменённых действий: запоздавший снимок старой ветки не нужен
   private generation = 0
   private baking = false
-  // Самая низкая точка отбрасывания с начала «запекания»
   private truncatedTo = Number.POSITIVE_INFINITY
 
   constructor(
@@ -60,17 +49,14 @@ export class ColoringHistory {
     this.generation++
   }
 
-  // Нарисовать состояние на позиции target
   async renderAt(target: number) {
     const from = await this.restoreNearest(this.engine, target)
-    // Заполнение — один раз в конце, а не после каждой операции
     for (let seq = from; seq < target; seq++) this.engine.apply(this.ops[seq - this.baseSeq]!, false)
     this.engine.measureAll()
     this.cursor = target
     if (target - from >= SNAPSHOT_INTERVAL) this.takeSnapshot()
   }
 
-  // Новое действие (уже нарисовано на холсте). Отменённые действия после курсора отбрасываются
   push(op: HistoryOp) {
     if (this.canRedo) this.truncate(this.cursor)
     this.ops.push(op)
@@ -83,7 +69,6 @@ export class ColoringHistory {
     if (this.canUndo) await this.renderAt(this.cursor - 1)
   }
 
-  // Повтор — просто выполнить следующую операцию, без перерисовки
   redo() {
     if (!this.canRedo) return
     this.engine.apply(this.ops[this.cursor - this.baseSeq]!)
@@ -97,7 +82,6 @@ export class ColoringHistory {
     this.dropSnapshots(key => key > seq)
   }
 
-  // Восстановить на движке ближайшее сохранённое состояние не новее target; вернуть его номер
   private async restoreNearest(engine: ColoringEngine, target: number): Promise<number> {
     const candidates = [...this.snapshots.keys()].filter(seq => seq >= this.baseSeq && seq <= target).sort((a, b) => b - a)
     for (const seq of candidates) {
@@ -135,20 +119,15 @@ export class ColoringHistory {
     const generation = this.generation
     this.engine.snapshot().then((image) => {
       if (generation === this.generation && seq <= this.head) this.snapshots.set(seq, image)
-    }).catch(() => {
-      // Снимок — только ускорение: без него состояние доиграется из более раннего
-    })
+    }).catch(() => {})
   }
 
-  // Самые старые BAKE_CHUNK операций — в базовое изображение. Собирается на невидимом движке,
-  // в фоне: игрок продолжает рисовать
   private async bake() {
     if (this.baking) return
     this.baking = true
     this.truncatedTo = Number.POSITIVE_INFINITY
     const seq = this.baseSeq + BAKE_CHUNK
     try {
-      // Обычно снимок ровно на этом месте уже есть в памяти; иначе собираем на невидимом движке
       let image = this.snapshots.get(seq)
       if (!image) {
         const scratch = this.options.createScratch()
@@ -157,7 +136,6 @@ export class ColoringHistory {
         image = await scratch.snapshot()
       }
 
-      // Пока собирали, игрок отменил действия ниже новой базы — эта база уже не подходит
       if (this.truncatedTo < seq || this.cursor < seq) return
 
       this.ops = this.ops.slice(seq - this.baseSeq)
@@ -165,9 +143,7 @@ export class ColoringHistory {
       this.baseImage = image
       this.dropSnapshots(key => key < seq)
       this.options.onBase(seq, image)
-    } catch {
-      // Не получилось — попробуем при следующем действии
-    } finally {
+    } catch {} finally {
       this.baking = false
     }
   }

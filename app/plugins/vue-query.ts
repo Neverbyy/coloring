@@ -5,9 +5,8 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   const queryClient = new QueryClient({
     queryCache: new QueryCache({
-      // Сессия истекла, пока игрок был на странице, — возвращаем на вход
-      onError: (error) => {
-        if (import.meta.server || errorStatus(error) !== 401) return
+      onError: (error, query) => {
+        if (import.meta.server || errorStatus(error) !== 401 || query.queryKey[0] === 'admin') return
         nuxtApp.runWithContext(() => useAuthStore().expire())
       }
     }),

@@ -1,8 +1,4 @@
 <script setup lang="ts">
-// Заполнение рамки по прогрессу: старт с 180° (середина левой стороны), против часовой.
-// Кладётся внутрь элемента с CSS-рамкой и рисуется поверх неё; сама рамка — «дорожка».
-// Геометрия считается в CSS от размеров контейнера (единицы cq) — без скриптов и замеров,
-// поэтому прогресс виден сразу, ещё с сервера
 const props = withDefaults(defineProps<{
   progress: number
   radius?: number
@@ -20,8 +16,6 @@ const style = computed(() => ({
   '--outer-radius': `${props.radius}px`
 }))
 
-// Запасной путь для браузеров без calc()/min() в stroke-dasharray или rx в CSS:
-// те же формулы считаются скриптом по замеренному размеру
 const root = ref<HTMLElement | null>(null)
 const measured = ref<{ width: number, height: number } | null>(null)
 let observer: ResizeObserver | undefined
@@ -55,7 +49,6 @@ const fallback = computed(() => {
 <template>
   <div ref="root" class="progress-frame" :class="{ 'progress-frame--done': value >= 1 }" :style="style" aria-hidden="true">
     <svg class="progress-frame__svg">
-      <!-- rx-атрибут — на случай, если браузер не понимает rx в CSS -->
       <rect
         class="progress-frame__bar"
         width="100%"
@@ -76,9 +69,6 @@ const fallback = computed(() => {
   pointer-events: none;
 }
 
-// Линия проходит по середине рамки: svg на половину толщины внутри.
-// Прямоугольник SVG обходится по часовой от верхнего левого угла; отражение по горизонтали
-// даёт обход против часовой от верхнего правого — как требуется
 .progress-frame__svg {
   position: absolute;
   inset: calc(var(--thickness) / 2);
@@ -90,22 +80,18 @@ const fallback = computed(() => {
 }
 
 .progress-frame__bar {
-  // Размеры линии: стороны, радиус скругления, периметр
   --w: calc(100cqw - var(--thickness));
   --h: calc(100cqh - var(--thickness));
   --r: min(calc(var(--outer-radius) - var(--thickness) / 2), calc(var(--w) / 2), calc(var(--h) / 2));
   --perimeter: calc(2 * var(--w) + 2 * var(--h) - 8 * var(--r) + 6.2832 * var(--r));
-  // От старта (верхний правый угол) до середины левой стороны: верх + четверть дуги + пол-левой стороны
   --start: calc(var(--w) - 2 * var(--r) + 1.5708 * var(--r) + (var(--h) - 2 * var(--r)) / 2);
   --length: calc(var(--progress) * var(--perimeter));
-  // Отрезок от середины левой стороны до конца контура и «перешагнувший» старт остаток
   --main: min(var(--length), calc(var(--perimeter) - var(--start)));
   --wrap: max(0px, calc(var(--length) - var(--perimeter) + var(--start)));
 
   fill: none;
   stroke: $color-progress;
   stroke-width: var(--thickness);
-  // Плоские концы: у нулевых отрезков пунктира круглые концы рисуют точки
   stroke-linecap: butt;
   stroke-dasharray: var(--wrap) calc(var(--start) - var(--wrap)) var(--main) var(--perimeter);
   rx: var(--r);
@@ -113,7 +99,6 @@ const fallback = computed(() => {
   transition: stroke-dasharray 0.6s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.3s;
 }
 
-// На 100% — оранжевая, как цифра «100%»: голубая сливается с небом и синей краской
 .progress-frame--done .progress-frame__bar {
   stroke: $color-accent;
 }

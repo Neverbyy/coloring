@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/vue-query'
-import { ARTS_API, IMPORT_MESSAGES, MAX_SVG_BYTES, artApiPath, type GalleryArt, type ImportResult } from '../../shared/gallery'
+import { ARTS_API, IMPORT_MESSAGES, artApiPath, type GalleryArt, type ImportResult } from '../../shared/gallery'
 import { paperGeometry } from '../../shared/history'
 import { forgetPending, pendingStorageKey } from '../engine/sync'
 
@@ -11,23 +11,12 @@ const MESSAGES = {
   deleteFailed: 'Не получилось удалить — проверь интернет и попробуй ещё раз'
 }
 
-// Ошибка с текстом для игрока
 export class OwnArtError extends Error {}
 
-function isSvgFile(file: File): boolean {
-  return /\.svg$/i.test(file.name) || file.type === 'image/svg+xml'
-}
-
-// Сколько областей увидит раскраска: та же разметка, что у холста
 async function countAreas(art: GalleryArt): Promise<number> {
-  const image = new Image()
-  image.src = art.image
-  await image.decode()
-  const map = segmentArt(image, paperGeometry(art.width, art.height))
-  return map.segments.filter(segment => !segment.background).length
+  return paintableAreas(segmentArt(await loadImage(art.image), paperGeometry(art.width, art.height)))
 }
 
-// Свои арты: импорт SVG и удаление
 export function useOwnArts() {
   const queryClient = useQueryClient()
   const auth = useAuthStore()
@@ -38,12 +27,9 @@ export function useOwnArts() {
     await $fetch(artApiPath(id), { method: 'DELETE' })
   }
 
-  // Подготовка — на сервере (санитизация и перевод в контур); здесь — проверка, что после неё
-  // есть что раскрашивать. Ошибки — OwnArtError с понятным текстом
   async function importArt(file: File): Promise<ImportResult> {
-    if (!isSvgFile(file)) throw new OwnArtError(MESSAGES.notSvg)
-    if (file.size === 0) throw new OwnArtError(MESSAGES.empty)
-    if (file.size > MAX_SVG_BYTES) throw new OwnArtError(MESSAGES.tooBig)
+    const problem = svgFileProblem(file)
+    if (problem) throw new OwnArtError(problem)
 
     importing.value = true
     try {
@@ -82,7 +68,6 @@ export function useOwnArts() {
     try {
       await remove(art.id)
     } catch (error) {
-      // Уже удалён (например, в другой вкладке) — для игрока это успех
       if (errorStatus(error) !== 404) throw new OwnArtError(errorMessage(error, MESSAGES.deleteFailed))
     }
     previews.remove(art.id)

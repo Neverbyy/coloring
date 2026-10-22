@@ -9,8 +9,6 @@ function drawingOf(userId: string, artId: string) {
 type DrawingColumns = typeof coloringDrawings.$inferSelect
 type Transaction = Parameters<Parameters<ReturnType<typeof useDb>['transaction']>[0]>[0]
 
-// Изменение рисунка под блокировкой строки: строка создаётся, если её ещё нет, и читается
-// (нужные поля) с FOR UPDATE — параллельные сохранения того же рисунка идут по очереди
 async function withLockedDrawing<K extends keyof DrawingColumns, T>(
   userId: string,
   artId: string,
@@ -31,7 +29,6 @@ export async function loadDrawing(userId: string, artId: string): Promise<Drawin
   const [row] = await useDb()
     .select({
       baseSeq: coloringDrawings.baseSeq,
-      // Только признак: саму картинку база отдаёт отдельным запросом
       hasBase: sql<boolean>`${coloringDrawings.baseImage} is not null`,
       ops: coloringDrawings.ops,
       cursor: coloringDrawings.cursor,
@@ -43,12 +40,8 @@ export async function loadDrawing(userId: string, artId: string): Promise<Drawin
   return row ?? { baseSeq: 0, hasBase: false, ops: [], cursor: 0, progress: 0 }
 }
 
-// Операции после fromSeq заменяются присланными (после отмены и нового действия «хвост» отбрасывается).
-// Повтор того же запроса даёт тот же результат — клиент может спокойно повторять при сбоях сети
 export function saveDrawingHistory(userId: string, artId: string, save: HistorySave): Promise<{ head: number }> {
   return withLockedDrawing(userId, artId, ['baseSeq', 'ops', 'startedAt', 'completedAt'], async (tx, row, where) => {
-    // Клиент опирается на операции, которых у сервера нет (или они уже в базе) —
-    // он пришлёт базовое изображение и повторит
     const head = row.baseSeq + row.ops.length
     if (save.fromSeq < row.baseSeq || save.fromSeq > head) {
       const conflict: HistoryConflict = { baseSeq: row.baseSeq, head }
@@ -78,12 +71,9 @@ export function saveDrawingHistory(userId: string, artId: string, save: HistoryS
   })
 }
 
-// Новое базовое изображение: всё до seq теперь в нём. Операции сервера после seq сохраняются —
-// их перезапишет следующее сохранение истории. image = null — база пустая (seq = 0)
 export function saveDrawingBase(userId: string, artId: string, seq: number, image: Buffer | null): Promise<{ head: number }> {
   return withLockedDrawing(userId, artId, ['baseSeq', 'ops', 'cursor'], async (tx, row, where) => {
     const head = row.baseSeq + row.ops.length
-    // Если сервер знает операции после seq — оставляем их, иначе журнал начинается с базы
     const ops = seq >= row.baseSeq && seq <= head ? row.ops.slice(seq - row.baseSeq) : []
     const cursor = Math.min(Math.max(row.cursor, seq), seq + ops.length)
 
@@ -99,7 +89,6 @@ export function saveDrawingBase(userId: string, artId: string, seq: number, imag
   })
 }
 
-// Картинки рисунка: базовое изображение (PNG) или миниатюра для галереи (JPEG)
 const IMAGE_COLUMNS = {
   base: coloringDrawings.baseImage,
   thumbnail: coloringDrawings.thumbnail
