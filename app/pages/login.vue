@@ -10,13 +10,26 @@ const country = ref('')
 const username = ref('')
 const error = ref('')
 const pending = ref(false)
+const nameTouched = ref(false)
+
+const nameError = computed(() => nameTouched.value ? validateUsername(username.value) : usernameCharsProblem(username.value))
+const message = computed(() => nameError.value ?? error.value)
+
+watch([country, username], () => {
+  error.value = ''
+})
 
 onMounted(() => {
   if (!country.value) country.value = detectCountry()
 })
 
+function onNameBlur() {
+  if (normalizeUsername(username.value)) nameTouched.value = true
+}
+
 async function submit() {
   if (pending.value) return
+  nameTouched.value = true
   error.value = ''
   const problem = validateLogin(country.value, username.value)
   if (problem) {
@@ -48,19 +61,23 @@ async function submit() {
         <input
           v-model="username"
           class="login__field"
+          :class="{ 'login__field--invalid': nameError }"
           type="text"
           placeholder="Имя"
           aria-label="Имя"
+          aria-describedby="login-error"
+          :aria-invalid="nameError ? 'true' : undefined"
           autocomplete="username"
           autocapitalize="off"
           autocorrect="off"
           spellcheck="false"
           enterkeyhint="go"
           :maxlength="USERNAME_MAX_LENGTH"
+          @blur="onNameBlur"
         >
       </div>
 
-      <p class="login__error" role="alert">{{ error }}</p>
+      <p id="login-error" class="login__error" role="alert">{{ message }}</p>
 
       <button class="login__submit" type="submit" :disabled="pending">
         {{ pending ? 'Входим…' : 'Играть' }}
@@ -139,12 +156,17 @@ async function submit() {
   }
 }
 
+.login__field--invalid,
+.login__field--invalid:focus {
+  border-color: $color-error;
+}
+
 .login__error {
   min-height: 20px;
   font-size: 16px;
   font-weight: 500;
   line-height: 20px;
-  color: #e8112d;
+  color: $color-error;
 }
 
 .login__submit {
