@@ -62,11 +62,18 @@ const fallback = computed(() => {
 </template>
 
 <style scoped lang="scss">
+@property --progress {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+
 .progress-frame {
   position: absolute;
   inset: calc(-1 * var(--thickness));
   container-type: size;
   pointer-events: none;
+  transition: --progress 0.6s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .progress-frame__svg {
@@ -96,7 +103,7 @@ const fallback = computed(() => {
   stroke-dasharray: var(--wrap) calc(var(--start) - var(--wrap)) var(--main) var(--perimeter);
   rx: var(--r);
   ry: var(--r);
-  transition: stroke-dasharray 0.6s cubic-bezier(0.22, 1, 0.36, 1), stroke 0.3s;
+  transition: stroke 0.3s;
 }
 
 .progress-frame--done .progress-frame__bar {
