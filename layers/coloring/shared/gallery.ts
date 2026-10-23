@@ -41,4 +41,5 @@ export const IMPORT_MESSAGES = {
 export interface ImportResult {
   art: GalleryArt
   notes: string[]
+  position: number
 }

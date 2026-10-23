@@ -19,6 +19,7 @@ export default defineEventHandler(async (event): Promise<ImportResult> => {
 
   return {
     art: toGalleryArt(row, { progress: null, thumbnailUpdatedAt: null, hasBase: null }),
-    notes: upload.notes
+    notes: upload.notes,
+    position: await countCommonGalleryArts(user)
   }
 })

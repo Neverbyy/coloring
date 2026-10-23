@@ -105,13 +105,24 @@ export async function countGalleryArts(user: SessionUser): Promise<number> {
   return row?.total ?? 0
 }
 
+export async function countCommonGalleryArts(user: SessionUser): Promise<number> {
+  const [row] = await useDb().select({ total: count() }).from(coloringArts).where(and(visibleTo(user), isNull(coloringArts.ownerId)))
+  return row?.total ?? 0
+}
+
 export async function listGalleryArts(user: SessionUser, offset: number, limit: number): Promise<{ items: GalleryArt[], total: number | null }> {
   const rows = await useDb()
     .select({ art: artFields, ...drawingFields, isNew: isNewFor(user.id), total: sql<number>`count(*) over ()`.mapWith(Number) })
     .from(coloringArts)
     .leftJoin(coloringDrawings, playerDrawing(user.id))
     .where(visibleTo(user))
-    .orderBy(sql`${coloringArts.ownerId} is null`, asc(coloringArts.sortOrder), desc(coloringArts.createdAt), asc(coloringArts.id))
+    .orderBy(
+      sql`${coloringArts.ownerId} is not null`,
+      sql`${coloringArts.publishedAt} desc nulls last`,
+      asc(coloringArts.sortOrder),
+      desc(coloringArts.createdAt),
+      asc(coloringArts.id)
+    )
     .limit(limit)
     .offset(offset)
   return { items: rows.map(row => toGalleryArt(row.art, row)), total: rows[0]?.total ?? null }

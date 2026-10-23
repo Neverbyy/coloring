@@ -48,9 +48,11 @@ export function useGalleryScreens(pager: Ref<HTMLElement | null>, page: Ref<Gall
     element.scrollTo({ left: index * element.clientWidth, behavior: smooth ? 'smooth' : 'instant' })
   }
 
-  function showFirst() {
-    firstEntry.value = 0
-    goToScreen(0, true)
+  function showEntry(index: number) {
+    const per = perScreen.value
+    const screen = per ? Math.floor(index / per) : 0
+    firstEntry.value = screen * per
+    nextTick(() => goToScreen(screen, true))
   }
 
   function measure() {
@@ -96,5 +98,5 @@ export function useGalleryScreens(pager: Ref<HTMLElement | null>, page: Ref<Gall
   watch(swipe, () => nextTick(measure))
   watch(() => screensQuery.data.value, loadAhead)
 
-  return { swipe, screens, currentScreen, goToScreen, showFirst, onScroll }
+  return { swipe, screens, currentScreen, goToScreen, showEntry, onScroll }
 }

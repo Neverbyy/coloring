@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { GalleryArt } from '#layers/coloring/shared/gallery'
+import { GALLERY_PAGE_SIZE, type GalleryArt } from '#layers/coloring/shared/gallery'
 
 useHead({ title: 'Галерея — Раскраска' })
 
@@ -31,7 +31,7 @@ watch(() => data.value?.page, (next, previous) => {
   if (next && previous) pageTransition.value = next >= previous ? 'gallery-page-next' : 'gallery-page-prev'
 })
 
-const { swipe, screens, currentScreen, goToScreen, showFirst, onScroll } = useGalleryScreens(pager, data)
+const { swipe, screens, currentScreen, goToScreen, showEntry, onScroll } = useGalleryScreens(pager, data)
 const { importing, importArt, deleteArt } = useOwnArts()
 const notice = ref<{ message: string, tone: 'error' | 'info' } | null>(null)
 const deletingId = ref<string | null>(null)
@@ -44,11 +44,12 @@ async function onImport(file: File) {
   if (importing.value) return
   notice.value = null
   try {
-    const { notes } = await importArt(file)
+    const { notes, position } = await importArt(file)
     if (swipe.value) {
-      showFirst()
+      showEntry(position + 1)
     } else {
-      if (page.value !== 1) await router.push({ query: { ...route.query, page: undefined } })
+      const target = Math.floor(position / GALLERY_PAGE_SIZE) + 1
+      if (page.value !== target) await router.push({ query: { ...route.query, page: target === 1 ? undefined : String(target) } })
       scroller.value?.scrollTo({ top: 0, behavior: 'smooth' })
     }
     if (notes.length) notice.value = { message: notes.join(' '), tone: 'info' }
