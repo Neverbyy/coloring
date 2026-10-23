@@ -25,9 +25,17 @@ export default defineNuxtPlugin(() => {
   }, { capture: true })
 
   const update = () => {
+    if (document.visibilityState === 'hidden') {
+      suspendAudio()
+      return
+    }
     const src = router.currentRoute.value.meta.music
-    setMusic(audio.musicOn && document.visibilityState === 'visible' && src ? src : null)
+    setMusic(audio.musicOn && src ? src : null)
   }
   watch(() => [router.currentRoute.value.meta.music, audio.musicOn], update, { immediate: true })
   document.addEventListener('visibilitychange', update)
+  window.addEventListener('pagehide', suspendAudio)
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) update()
+  })
 })

@@ -81,7 +81,13 @@ export function unlockAudio() {
     context = new Context()
     for (const src of files.keys()) loadClip(src)
   }
-  if (context.state === 'suspended') context.resume().catch(() => {})
+  if (context.state !== 'running') context.resume().catch(() => {})
+}
+
+export function suspendAudio() {
+  cancelAnimationFrame(fadeFrame)
+  music?.pause()
+  if (context?.state === 'running') context.suspend().catch(() => {})
 }
 
 export function preloadSounds(sounds: Sound[]) {
