@@ -32,6 +32,17 @@ const percent = computed(() => Math.floor(progress.value))
 const canUndo = ref(false)
 const canRedo = ref(false)
 const syncStatus = ref<SyncStatus>('saved')
+const zoomMode = ref<'in' | 'out' | 'free' | null>(null)
+
+function toggleZoom(mode: 'in' | 'out' | 'free') {
+  zoomMode.value = zoomMode.value === mode ? null : mode
+}
+
+const narrowScreen = useMediaQuery('(max-width: 1023px)')
+
+watch(() => [tools.tool, tools.color, narrowScreen.value], () => {
+  zoomMode.value = null
+})
 
 const shaking = ref(false)
 const celebrating = ref(false)
@@ -97,6 +108,7 @@ onBeforeUnmount(() => {
           <ColoringCanvas
             ref="canvas"
             :art="art"
+            :zoom-mode="zoomMode"
             @progress="liveProgress = $event"
             @history="onHistory"
             @status="syncStatus = $event"
@@ -104,9 +116,46 @@ onBeforeUnmount(() => {
           />
         </div>
 
-        <p class="frame__progress" :class="{ 'frame__progress--done': percent >= 100 }" aria-live="polite">
-          {{ percent }}%
-        </p>
+        <div class="frame__top">
+          <div class="frame__zoom">
+            <button type="button" class="frame__zoom-button" aria-label="Очистить рисунок" @click="canvas?.clearAll()">
+              <img src="../../assets/icons/reset.svg" alt="" width="64" height="60">
+            </button>
+            <button
+              type="button"
+              class="frame__zoom-button frame__zoom-button--lens"
+              :class="{ 'frame__zoom-button--active': zoomMode === 'in' }"
+              aria-label="Приблизить"
+              :aria-pressed="zoomMode === 'in'"
+              @click="toggleZoom('in')"
+            >
+              <img src="../../assets/icons/zoom_in.svg" alt="" width="64" height="60">
+            </button>
+            <button
+              type="button"
+              class="frame__zoom-button frame__zoom-button--lens"
+              :class="{ 'frame__zoom-button--active': zoomMode === 'out' }"
+              aria-label="Отдалить"
+              :aria-pressed="zoomMode === 'out'"
+              @click="toggleZoom('out')"
+            >
+              <img src="../../assets/icons/zoom_out.svg" alt="" width="64" height="60">
+            </button>
+            <button
+              type="button"
+              class="frame__zoom-button frame__zoom-button--touch"
+              :class="{ 'frame__zoom-button--active': zoomMode === 'free' }"
+              aria-label="Масштаб"
+              :aria-pressed="zoomMode === 'free'"
+              @click="toggleZoom('free')"
+            >
+              <img src="../../assets/icons/zoom.svg" alt="" width="64" height="60">
+            </button>
+          </div>
+          <p class="frame__progress" :class="{ 'frame__progress--done': percent >= 100 }" aria-live="polite">
+            {{ percent }}%
+          </p>
+        </div>
 
         <p v-if="syncStatus === 'offline'" class="frame__status" role="status">
           Нет связи — сохраним позже
@@ -338,7 +387,7 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   position: absolute;
   top: 24px;
   left: 24px;
-  max-width: calc(100% - 140px);
+  max-width: calc(100% - 340px);
   padding: 6px 12px;
   border-radius: 12px;
   background: #fff4d6;
@@ -346,6 +395,11 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   font-size: 14px;
   font-weight: 500;
   pointer-events: none;
+
+  @include phone-portrait {
+    top: 76px;
+    max-width: calc(100% - 48px);
+  }
 }
 
 .frame__done {
@@ -396,10 +450,63 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   }
 }
 
-.frame__progress {
+.frame__top {
   position: absolute;
-  top: 26px;
+  top: 14px;
   right: 29px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  pointer-events: none;
+}
+
+.frame__zoom {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  border-radius: 18px;
+  background: $color-frame;
+  pointer-events: auto;
+}
+
+.frame__zoom-button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 2px solid rgba($color-progress, 0.25);
+  border-radius: 12px;
+  background: rgba(#fff, 0.5);
+  transition: transform 0.1s, background-color 0.15s, border-color 0.15s;
+  @include pressable(0.9);
+
+  img {
+    display: block;
+    width: 32px;
+    height: auto;
+  }
+}
+
+.frame__zoom-button--lens {
+  @include below-desktop {
+    display: none;
+  }
+}
+
+.frame__zoom-button--touch {
+  display: none;
+
+  @include below-desktop {
+    display: grid;
+  }
+}
+
+.frame__zoom-button--active {
+  border-color: $color-progress;
+  background: #fff;
+}
+
+.frame__progress {
   font-family: $font-display;
   font-size: 32px;
   line-height: 32px;

@@ -5,8 +5,9 @@ import { paperGeometry, type HistoryOp, type StrokeTool } from '#layers/coloring
 import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
 import { DrawingSession } from '#layers/coloring/app/engine/session'
 import { pendingStorageKey, type SyncStatus } from '#layers/coloring/app/engine/sync'
+import type { CanvasView } from '#layers/coloring/app/utils/zoom'
 
-const props = defineProps<{ art: GalleryArt }>()
+const props = defineProps<{ art: GalleryArt, zoomMode?: 'in' | 'out' | 'free' | null }>()
 const emit = defineEmits<{
   progress: [value: number]
   history: [canUndo: boolean, canRedo: boolean]
@@ -19,6 +20,7 @@ const HOLD_TOLERANCE = 10
 const IMAGES_IDLE_MS = 1500
 const STROKE_SOUND_IDLE_MS = 150
 const THUMBNAIL_SIZE = 720
+const TAP_SLOP = 8
 
 const tools = useColoringToolsStore()
 const auth = useAuthStore()
@@ -34,8 +36,13 @@ const ready = ref(false)
 const failed = ref(false)
 const busy = ref(false)
 const hold = ref<{ x: number, y: number } | null>(null)
+const view = ref<CanvasView>({ ...INITIAL_VIEW })
+const panning = ref(false)
 
 const ratio = computed(() => props.art.width / props.art.height)
+const viewStyle = computed(() => ({
+  transform: `translate(${view.value.x * 100}%, ${view.value.y * 100}%) scale(${view.value.scale})`
+}))
 const paper = computed(() => paperGeometry(props.art.width, props.art.height))
 const paperStyle = computed(() => paperLayout(props.art.width, props.art.height))
 const placeholder = computed(() => previews.get(props.art.id)?.thumbnail ?? props.art.thumbnail)
@@ -59,6 +66,10 @@ let thumbnailStale = false
 let strokeTool: StrokeTool = 'brush'
 let strokeSound: LoopHandle | null = null
 let strokeSoundTimer: ReturnType<typeof setTimeout> | undefined
+let zoomGesture: { id: number, startX: number, startY: number, lastX: number, lastY: number, moved: boolean } | null = null
+const fingers = new Map<number, { x: number, y: number }>()
+let pinch: { distance: number, x: number, y: number, view: CanvasView } | null = null
+let panAnchor: { x: number, y: number } | null = null
 
 async function init() {
   failed.value = false
@@ -140,7 +151,92 @@ function toWork(event: PointerEvent): [number, number] {
   ]
 }
 
+function startZoomGesture(event: PointerEvent) {
+  if (zoomGesture || !event.isPrimary || event.button !== 0) return
+  zoomGesture = { id: event.pointerId, startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY, moved: false }
+  stage.value!.setPointerCapture(event.pointerId)
+}
+
+function moveZoomGesture(event: PointerEvent) {
+  const gesture = zoomGesture
+  if (!gesture || event.pointerId !== gesture.id) return
+  if (!gesture.moved && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) <= TAP_SLOP) return
+  gesture.moved = true
+  panning.value = true
+  const { offsetWidth, offsetHeight } = stage.value!
+  view.value = panBy(view.value, (event.clientX - gesture.lastX) / offsetWidth, (event.clientY - gesture.lastY) / offsetHeight)
+  gesture.lastX = event.clientX
+  gesture.lastY = event.clientY
+}
+
+function endZoomGesture(event: PointerEvent) {
+  const gesture = zoomGesture
+  if (!gesture || event.pointerId !== gesture.id) return
+  zoomGesture = null
+  panning.value = false
+  if (gesture.moved || event.type !== 'pointerup' || !props.zoomMode) return
+  const rect = stage.value!.getBoundingClientRect()
+  view.value = zoomAt(
+    view.value,
+    props.zoomMode === 'in' ? 1 : -1,
+    (event.clientX - rect.left) / rect.width - 0.5,
+    (event.clientY - rect.top) / rect.height - 0.5
+  )
+}
+
+function stagePoint(clientX: number, clientY: number) {
+  const rect = stage.value!.getBoundingClientRect()
+  return { x: (clientX - rect.left) / rect.width - 0.5, y: (clientY - rect.top) / rect.height - 0.5 }
+}
+
+function pinchFingers() {
+  const [a, b] = [...fingers.values()]
+  if (!a || !b) return null
+  return { distance: Math.hypot(a.x - b.x, a.y - b.y), ...stagePoint((a.x + b.x) / 2, (a.y + b.y) / 2) }
+}
+
+function regroupFingers() {
+  const pair = pinchFingers()
+  pinch = pair && { ...pair, view: { ...view.value } }
+  const [single] = fingers.values()
+  panAnchor = !pair && single ? { ...single } : null
+  panning.value = fingers.size > 0
+}
+
+function startFreeGesture(event: PointerEvent) {
+  fingers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  stage.value!.setPointerCapture(event.pointerId)
+  regroupFingers()
+}
+
+function moveFreeGesture(event: PointerEvent) {
+  fingers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+  const pair = pinchFingers()
+  if (pinch && pair) {
+    const ratio = pinch.distance > 0 ? pair.distance / pinch.distance : 1
+    view.value = pinchView(pinch.view, ratio, pinch.x, pinch.y, pair.x, pair.y)
+    return
+  }
+  if (!panAnchor) return
+  const { offsetWidth, offsetHeight } = stage.value!
+  view.value = panBy(view.value, (event.clientX - panAnchor.x) / offsetWidth, (event.clientY - panAnchor.y) / offsetHeight)
+  panAnchor = { x: event.clientX, y: event.clientY }
+}
+
+function endFreeGesture(event: PointerEvent) {
+  fingers.delete(event.pointerId)
+  regroupFingers()
+}
+
 function onPointerDown(event: PointerEvent) {
+  if (props.zoomMode === 'free') {
+    startFreeGesture(event)
+    return
+  }
+  if (props.zoomMode) {
+    startZoomGesture(event)
+    return
+  }
   if (!ready.value || busy.value || !session || pointerId !== null) return
   if (!event.isPrimary || event.button !== 0) return
   canvasRect = paintCanvas.value!.getBoundingClientRect()
@@ -157,6 +253,14 @@ function onPointerDown(event: PointerEvent) {
 }
 
 function onPointerMove(event: PointerEvent) {
+  if (fingers.has(event.pointerId)) {
+    moveFreeGesture(event)
+    return
+  }
+  if (zoomGesture) {
+    moveZoomGesture(event)
+    return
+  }
   if (event.pointerId !== pointerId || !session?.engine.drawing) return
   const coalesced = event.getCoalescedEvents?.() ?? []
   for (const point of coalesced.length ? coalesced : [event]) pendingPoints.push(...toWork(point))
@@ -194,6 +298,14 @@ function stopStrokeSound() {
 }
 
 function onPointerUp(event: PointerEvent) {
+  if (fingers.has(event.pointerId)) {
+    endFreeGesture(event)
+    return
+  }
+  if (zoomGesture) {
+    endZoomGesture(event)
+    return
+  }
   if (event.pointerId !== pointerId) return
   pointerId = null
   canvasRect = null
@@ -244,6 +356,13 @@ function redo() {
   if (canEditHistory()) session!.redo()
 }
 
+function clearAll() {
+  if (!canEditHistory() || !session!.engine.hasAnyPaint()) return
+  const op: HistoryOp = { t: 'reset' }
+  session!.engine.apply(op)
+  session!.commit(op)
+}
+
 async function exportImage(): Promise<Blob> {
   if (!session || !lineArt.value) throw new Error('Рисунок ещё не загружен')
   if (exported?.version === version) return exported.image
@@ -281,13 +400,19 @@ onBeforeUnmount(() => {
   session?.dispose(thumbnailStale ? updateThumbnail() : undefined)
 })
 
-defineExpose({ undo, redo, exportImage })
+defineExpose({ undo, redo, exportImage, clearAll })
 </script>
 
 <template>
   <div
     ref="stage"
     class="art-canvas"
+    :class="{
+      'art-canvas--zoom-in': zoomMode === 'in',
+      'art-canvas--zoom-out': zoomMode === 'out',
+      'art-canvas--grab': zoomMode === 'free',
+      'art-canvas--panning': panning
+    }"
     :style="{ '--ratio': ratio }"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
@@ -295,20 +420,22 @@ defineExpose({ undo, redo, exportImage })
     @pointercancel="onPointerUp"
     @lostpointercapture="onPointerUp"
   >
-    <div class="art-canvas__paper" :style="paperStyle">
-      <Transition name="art-canvas-placeholder">
-        <img
-          v-if="placeholder && !ready"
-          class="art-canvas__layer art-canvas__placeholder"
-          :src="placeholder"
-          alt=""
-          draggable="false"
-        >
-      </Transition>
-      <canvas ref="paintCanvas" class="art-canvas__layer" />
-      <canvas ref="previewCanvas" class="art-canvas__layer" />
+    <div class="art-canvas__view" :style="viewStyle">
+      <div class="art-canvas__paper" :style="paperStyle">
+        <Transition name="art-canvas-placeholder">
+          <img
+            v-if="placeholder && !ready"
+            class="art-canvas__layer art-canvas__placeholder"
+            :src="placeholder"
+            alt=""
+            draggable="false"
+          >
+        </Transition>
+        <canvas ref="paintCanvas" class="art-canvas__layer" />
+        <canvas ref="previewCanvas" class="art-canvas__layer" />
+      </div>
+      <img ref="lineArt" class="art-canvas__lines" :src="art.image" :alt="art.title" draggable="false">
     </div>
-    <img ref="lineArt" class="art-canvas__lines" :src="art.image" :alt="art.title" draggable="false">
     <span
       v-if="hold"
       class="art-canvas__hold"
@@ -328,6 +455,32 @@ defineExpose({ undo, redo, exportImage })
   width: min(100cqw, calc(100cqh * var(--ratio)));
   aspect-ratio: var(--ratio);
   touch-action: none;
+}
+
+.art-canvas--zoom-in {
+  cursor: zoom-in;
+}
+
+.art-canvas--zoom-out {
+  cursor: zoom-out;
+}
+
+.art-canvas--grab {
+  cursor: grab;
+}
+
+.art-canvas--panning {
+  cursor: grabbing;
+}
+
+.art-canvas__view {
+  position: absolute;
+  inset: 0;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.art-canvas--panning .art-canvas__view {
+  transition: none;
 }
 
 .art-canvas__paper {

@@ -28,6 +28,12 @@ $frame-radius: 64px;
   }
 }
 
+@mixin below-desktop {
+  @media (max-width: $breakpoint-desktop - 1px) {
+    @content;
+  }
+}
+
 @mixin phone-landscape {
   @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
     @content;

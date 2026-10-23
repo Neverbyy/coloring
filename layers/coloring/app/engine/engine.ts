@@ -137,6 +137,14 @@ export class ColoringEngine {
     return true
   }
 
+  hasAnyPaint(): boolean {
+    const data = this.read(this.paint.canvas, { x: 0, y: 0, w: this.width, h: this.height })
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i]! > 0) return true
+    }
+    return false
+  }
+
   hasPaint(x: number, y: number): boolean {
     const segment = this.segmentAt(x, y)
     if (!segment) return false
@@ -205,6 +213,11 @@ export class ColoringEngine {
       this.drawPath(op.p, segment.box)
       this.endStroke(measure)
       return segment
+    }
+
+    if (op.t === 'reset') {
+      this.reset()
+      return null
     }
 
     const segment = this.segmentAt(op.p[0], op.p[1])

@@ -51,6 +51,10 @@ describe('проверка операций истории с клиента', (
   it('очистка сегмента', () => {
     expect(parseHistoryOp({ t: 'clear', p: [7, 8], c: COLOR })).toEqual({ t: 'clear', p: [7, 8] })
   })
+
+  it('сброс всего рисунка — без лишних полей', () => {
+    expect(parseHistoryOp({ t: 'reset', p: [1, 2], c: COLOR, extra: '<script>' })).toEqual({ t: 'reset' })
+  })
 })
 
 describe('проверка сохранения истории', () => {
@@ -59,6 +63,11 @@ describe('проверка сохранения истории', () => {
   it('корректное сохранение', () => {
     expect(parseHistorySave({ fromSeq: 3, ops: [op], cursor: 4, progress: 12.5 }))
       .toEqual({ fromSeq: 3, ops: [op], cursor: 4, progress: 12.5 })
+  })
+
+  it('сброс сохраняется вместе с другими операциями', () => {
+    expect(parseHistorySave({ fromSeq: 0, ops: [op, { t: 'reset' }], cursor: 2, progress: 0 }))
+      .toEqual({ fromSeq: 0, ops: [op, { t: 'reset' }], cursor: 2, progress: 0 })
   })
 
   it.each([

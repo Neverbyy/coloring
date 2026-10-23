@@ -17,7 +17,8 @@ export type StrokeTool = 'brush' | 'pencil' | 'eraser'
 export interface StrokeOp { t: 'stroke', tool: StrokeTool, c: string | null, p: number[] }
 export interface FillOp { t: 'fill', tool?: Exclude<StrokeTool, 'eraser'>, c: string, p: [number, number] }
 export interface ClearOp { t: 'clear', p: [number, number] }
-export type HistoryOp = StrokeOp | FillOp | ClearOp
+export interface ResetOp { t: 'reset' }
+export type HistoryOp = StrokeOp | FillOp | ClearOp | ResetOp
 
 export interface DrawingState {
   baseSeq: number
@@ -101,6 +102,8 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
     const point = toPoint(op.p)
     return point && { t: 'clear', p: point }
   }
+
+  if (op.t === 'reset') return { t: 'reset' }
 
   return null
 }
