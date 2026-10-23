@@ -7,6 +7,7 @@ const SNAP_RADIUS = 10
 const MIN_POINT_DISTANCE = 2
 const PAINTED_ALPHA = 24
 const SEGMENT_DONE = 0.95
+const CHANGE_TOLERANCE = 2
 
 interface ActiveStroke {
   op: StrokeOp
@@ -15,6 +16,7 @@ interface ActiveStroke {
   lastY: number
   dirty: Box | null
   restorable: boolean
+  knockout: boolean
 }
 
 function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
@@ -116,22 +118,28 @@ export class ColoringEngine {
     return segments[best] ?? null
   }
 
-  beginStroke(tool: StrokeTool, color: string, x: number, y: number): boolean {
+  beginStroke(tool: StrokeTool, color: string, x: number, y: number, width?: number, opacity?: number): boolean {
     this.cancelStroke()
     const segment = this.segmentAt(x, y)
     if (!segment) return false
 
     const px = this.clampX(x)
     const py = this.clampY(y)
-    const restorable = tool === 'eraser'
+    const eraser = tool === 'eraser'
+    const knockout = !eraser && opacity !== undefined && opacity < 1
+    const restorable = eraser || knockout
     if (restorable) this.saveBackup(segment.box)
+    const op: StrokeOp = { t: 'stroke', tool, c: eraser ? null : color, p: [px, py] }
+    if (!eraser && width !== undefined) op.w = width
+    if (!eraser && opacity !== undefined) op.a = opacity
     this.active = {
-      op: { t: 'stroke', tool, c: restorable ? null : color, p: [px, py] },
+      op,
       segment,
       lastX: px,
       lastY: py,
       dirty: null,
-      restorable
+      restorable,
+      knockout
     }
     this.drawPath([px, py])
     return true
@@ -180,13 +188,12 @@ export class ColoringEngine {
   endStroke(measure = true): StrokeOp | null {
     const active = this.active
     if (!active) return null
-    if (active.restorable && !this.erased(active)) {
-      this.clearStroke(active)
-      this.active = null
+    if (active.restorable && !this.changed(active)) {
+      this.cancelStroke()
       return null
     }
 
-    if (active.op.tool !== 'eraser' && active.dirty) drawRegion(this.paint, this.preview.canvas, active.dirty)
+    if (!active.knockout && active.op.tool !== 'eraser' && active.dirty) drawRegion(this.paint, this.preview.canvas, active.dirty)
     this.clearStroke(active)
     this.active = null
     if (measure) this.measure(active.segment)
@@ -209,7 +216,9 @@ export class ColoringEngine {
     if (op.t === 'stroke') {
       const segment = this.segmentAt(op.p[0]!, op.p[1]!)
       if (!segment) return null
-      this.active = { op, segment, lastX: op.p[0]!, lastY: op.p[1]!, dirty: null, restorable: false }
+      const knockout = op.tool !== 'eraser' && (op.a ?? 1) < 1
+      if (knockout) this.saveBackup(segment.box)
+      this.active = { op, segment, lastX: op.p[0]!, lastY: op.p[1]!, dirty: null, restorable: false, knockout }
       this.drawPath(op.p, segment.box)
       this.endStroke(measure)
       return segment
@@ -222,7 +231,7 @@ export class ColoringEngine {
 
     const segment = this.segmentAt(op.p[0], op.p[1])
     if (!segment) return null
-    if (op.t === 'fill') this.fillSegment(segment, op.c, op.tool === 'pencil')
+    if (op.t === 'fill') this.fillSegment(segment, op.c, op.tool === 'pencil', op.a ?? 1)
     else this.clearSegment(segment)
     if (measure) this.measure(segment)
     return segment
@@ -312,16 +321,16 @@ export class ColoringEngine {
 
   private drawPath(points: number[], area?: Box) {
     const active = this.active!
-    const style = TOOL_STYLES[active.op.tool]
+    const width = active.op.w ?? TOOL_STYLES[active.op.tool].width
     const context = this.stroke
-    const radius = style.width / 2
+    const radius = width / 2
     const { box } = active.segment
     context.save()
     context.beginPath()
     context.rect(box.x, box.y, box.w, box.h)
     context.clip()
     context.fillStyle = context.strokeStyle = active.op.c ?? '#000000'
-    context.lineWidth = style.width
+    context.lineWidth = width
     context.lineCap = 'round'
     context.lineJoin = 'round'
     context.beginPath()
@@ -367,7 +376,7 @@ export class ColoringEngine {
 
     const style = TOOL_STYLES[active.op.tool]
     const eraser = active.op.tool === 'eraser'
-    const target = eraser ? this.scratch : this.preview
+    const target = eraser || active.knockout ? this.scratch : this.preview
 
     target.save()
     target.beginPath()
@@ -381,6 +390,20 @@ export class ColoringEngine {
     target.restore()
 
     if (eraser) this.erase(() => drawRegion(this.paint, this.scratch.canvas, box))
+    else if (active.knockout) this.replace(box, active.op.a ?? 1)
+  }
+
+  private replace(box: Box, opacity: number) {
+    const { paint } = this
+    paint.save()
+    paint.clearRect(box.x, box.y, box.w, box.h)
+    if (this.backup) drawRegion(paint, this.backup.canvas, box)
+    paint.globalCompositeOperation = 'destination-out'
+    drawRegion(paint, this.scratch.canvas, box)
+    paint.globalCompositeOperation = 'lighter'
+    paint.globalAlpha = opacity
+    drawRegion(paint, this.scratch.canvas, box)
+    paint.restore()
   }
 
   private applyTexture(context: CanvasRenderingContext2D, box: Box) {
@@ -389,17 +412,20 @@ export class ColoringEngine {
     context.fillRect(box.x, box.y, box.w, box.h)
   }
 
-  private fillSegment(segment: Segment, color: string, textured: boolean) {
+  private fillSegment(segment: Segment, color: string, textured: boolean, opacity: number) {
     const { box } = segment
     const context = this.scratch
     context.save()
     context.clearRect(box.x, box.y, box.w, box.h)
     context.fillStyle = color
+    context.globalAlpha = opacity
     context.fillRect(box.x, box.y, box.w, box.h)
+    context.globalAlpha = 1
     if (textured) this.applyTexture(context, box)
     context.globalCompositeOperation = 'destination-in'
     context.drawImage(this.mask(segment), box.x, box.y)
     context.restore()
+    this.clearSegment(segment)
     drawRegion(this.paint, this.scratch.canvas, box)
   }
 
@@ -420,12 +446,12 @@ export class ColoringEngine {
     drawRegion(this.backup, this.paint.canvas, box)
   }
 
-  private erased({ dirty }: ActiveStroke): boolean {
+  private changed({ dirty }: ActiveStroke): boolean {
     if (!dirty || !this.backup) return false
     const before = this.read(this.backup.canvas, dirty)
     const after = this.read(this.paint.canvas, dirty)
-    for (let i = 3; i < before.length; i += 4) {
-      if (before[i] !== after[i]) return true
+    for (let i = 0; i < before.length; i++) {
+      if (Math.abs(before[i]! - after[i]!) > CHANGE_TOLERANCE) return true
     }
     return false
   }

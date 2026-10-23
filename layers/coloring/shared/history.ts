@@ -13,9 +13,17 @@ export const MAX_IMAGE_BYTES = 4 * 1024 * 1024
 export const MAX_THUMBNAIL_BYTES = 512 * 1024
 
 export type StrokeTool = 'brush' | 'pencil' | 'eraser'
+export type PaintTool = Exclude<StrokeTool, 'eraser'>
 
-export interface StrokeOp { t: 'stroke', tool: StrokeTool, c: string | null, p: number[] }
-export interface FillOp { t: 'fill', tool?: Exclude<StrokeTool, 'eraser'>, c: string, p: [number, number] }
+export const STROKE_WIDTHS: Record<PaintTool, readonly number[]> = {
+  brush: [18, 34, 60],
+  pencil: [6, 12, 20]
+}
+export const DEFAULT_WIDTH_INDEX = 1
+export const STROKE_OPACITIES: readonly number[] = [1, 0.6, 0.3]
+
+export interface StrokeOp { t: 'stroke', tool: StrokeTool, c: string | null, p: number[], w?: number, a?: number }
+export interface FillOp { t: 'fill', tool?: PaintTool, c: string, p: [number, number], a?: number }
 export interface ClearOp { t: 'clear', p: [number, number] }
 export interface ResetOp { t: 'reset' }
 export type HistoryOp = StrokeOp | FillOp | ClearOp | ResetOp
@@ -87,7 +95,17 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
     const points = op.p
     if (!Array.isArray(points) || points.length < 2 || points.length % 2 !== 0) return null
     if (points.length > MAX_STROKE_POINTS * 2 || !points.every(isCoord)) return null
-    return { t: 'stroke', tool, c: color, p: points as number[] }
+    const stroke: StrokeOp = { t: 'stroke', tool, c: color, p: points as number[] }
+    if (tool === 'eraser') return stroke
+    if (op.w !== undefined) {
+      if (!STROKE_WIDTHS[tool].includes(op.w as number)) return null
+      stroke.w = op.w as number
+    }
+    if (op.a !== undefined) {
+      if (!STROKE_OPACITIES.includes(op.a as number)) return null
+      stroke.a = op.a as number
+    }
+    return stroke
   }
 
   if (op.t === 'fill') {
@@ -95,7 +113,12 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
     if (!point || typeof op.c !== 'string' || !COLORS.has(op.c)) return null
     const tool = op.tool ?? 'brush'
     if (tool !== 'brush' && tool !== 'pencil') return null
-    return { t: 'fill', tool, c: op.c, p: point }
+    const fill: FillOp = { t: 'fill', tool, c: op.c, p: point }
+    if (op.a !== undefined) {
+      if (!STROKE_OPACITIES.includes(op.a as number)) return null
+      fill.a = op.a as number
+    }
+    return fill
   }
 
   if (op.t === 'clear') {

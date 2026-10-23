@@ -165,6 +165,11 @@ onBeforeUnmount(() => {
 
       <div class="board__right">
         <ColoringSidePanel />
+        <Transition name="board-options">
+          <div v-if="tools.optionsOpen" class="board__options">
+            <ColoringStrokeOptions />
+          </div>
+        </Transition>
       </div>
     </div>
   </main>
@@ -321,6 +326,7 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
 }
 
 .board__right {
+  position: relative;
   flex: none;
   width: calc(#{$column-width} + env(safe-area-inset-right));
 
@@ -328,6 +334,32 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
     width: auto;
     height: calc(#{$column-width} + env(safe-area-inset-bottom));
   }
+}
+
+.board__options {
+  position: absolute;
+  top: 8px;
+  right: calc(100% + 8px);
+  z-index: 10;
+  transform-origin: right top;
+
+  @include phone-portrait {
+    top: auto;
+    right: 8px;
+    bottom: calc(100% + 8px);
+    transform-origin: right bottom;
+  }
+}
+
+.board-options-enter-active,
+.board-options-leave-active {
+  transition: opacity 0.15s, transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.board-options-enter-from,
+.board-options-leave-to {
+  opacity: 0;
+  transform: scale(0.85);
 }
 
 .frame {

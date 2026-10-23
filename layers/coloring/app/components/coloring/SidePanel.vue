@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool, type DrawingTool } from '#layers/coloring/app/stores/coloringTools'
+import { STROKE_OPACITIES } from '#layers/coloring/shared/history'
 
 const store = useColoringToolsStore()
-const { tool, color, recentColors, paletteOpen } = storeToRefs(store)
+const { tool, color, recentColors, paletteOpen, optionsOpen, widths, opacities } = storeToRefs(store)
+
+const BADGE_SIZES = [6, 10, 14]
 
 const ITEM_SIZE = 44
 const ITEM_GAP = 2
@@ -99,6 +102,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :class="{ 'side-panel__button--active': item === tool }"
           :aria-label="COLORING_TOOL_LABELS[item]"
           :aria-pressed="item === tool"
+          :aria-expanded="item === tool && item !== 'eraser' ? optionsOpen : undefined"
           :tabindex="paletteOpen ? -1 : undefined"
           @click="store.selectTool(item)"
         >
@@ -107,6 +111,12 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               :kind="item"
               :color="item === tool && item !== 'eraser' ? color : undefined"
               :flip="item !== 'brush'"
+            />
+          </span>
+          <span v-if="item === tool && item !== 'eraser'" class="side-panel__badge" aria-hidden="true">
+            <span
+              class="side-panel__badge-dot"
+              :style="{ '--size': `${BADGE_SIZES[widths[item]]}px`, background: color, opacity: STROKE_OPACITIES[opacities[item]] }"
             />
           </span>
         </button>
@@ -261,6 +271,35 @@ $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
 .side-panel__button--active .side-panel__sprite {
   --offset: 0px;
+}
+
+.side-panel__badge {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba($color-ink, 0.25);
+  transform: translateY(-50%) scale(var(--scale));
+  pointer-events: none;
+
+  @include phone-portrait {
+    top: auto;
+    right: auto;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%) scale(var(--scale));
+  }
+}
+
+.side-panel__badge-dot {
+  width: var(--size);
+  height: var(--size);
+  border-radius: 50%;
 }
 
 @media (hover: hover) {

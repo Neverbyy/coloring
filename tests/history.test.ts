@@ -52,6 +52,30 @@ describe('проверка операций истории с клиента', (
     expect(parseHistoryOp({ t: 'clear', p: [7, 8], c: COLOR })).toEqual({ t: 'clear', p: [7, 8] })
   })
 
+  it('толщина и прозрачность штриха — только из наборов инструмента', () => {
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 60, a: 0.3 }))
+      .toEqual({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 60, a: 0.3 })
+    expect(parseHistoryOp({ t: 'stroke', tool: 'pencil', c: COLOR, p: [1, 2], w: 6, a: 0.6 }))
+      .toEqual({ t: 'stroke', tool: 'pencil', c: COLOR, p: [1, 2], w: 6, a: 0.6 })
+    expect(parseHistoryOp({ t: 'stroke', tool: 'pencil', c: COLOR, p: [1, 2], w: 60 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 500 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: 0 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: '1' })).toBeNull()
+  })
+
+  it('у резинки толщины и прозрачности нет', () => {
+    expect(parseHistoryOp({ t: 'stroke', tool: 'eraser', c: null, p: [1, 2], w: 60, a: 0.3 }))
+      .toEqual({ t: 'stroke', tool: 'eraser', c: null, p: [1, 2] })
+  })
+
+  it('заливка с прозрачностью; без полей — как раньше', () => {
+    expect(parseHistoryOp({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.6 }))
+      .toEqual({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.6 })
+    expect(parseHistoryOp({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.5 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2] }))
+      .toEqual({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2] })
+  })
+
   it('сброс всего рисунка — без лишних полей', () => {
     expect(parseHistoryOp({ t: 'reset', p: [1, 2], c: COLOR, extra: '<script>' })).toEqual({ t: 'reset' })
   })

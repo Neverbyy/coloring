@@ -241,7 +241,7 @@ function onPointerDown(event: PointerEvent) {
   if (!event.isPrimary || event.button !== 0) return
   canvasRect = paintCanvas.value!.getBoundingClientRect()
   const [x, y] = toWork(event)
-  if (!session.engine.beginStroke(tools.tool, tools.color, x, y)) return
+  if (!session.engine.beginStroke(tools.tool, tools.color, x, y, tools.strokeWidth, tools.strokeOpacity)) return
 
   strokeTool = tools.tool
   pointerId = event.pointerId
@@ -331,7 +331,7 @@ function fillByHold() {
   const point: [number, number] = [Math.round(start.x), Math.round(start.y)]
   const op: HistoryOp = tools.tool === 'eraser'
     ? { t: 'clear', p: point }
-    : { t: 'fill', tool: tools.tool, c: tools.color, p: point }
+    : { t: 'fill', tool: tools.tool, c: tools.color, p: point, a: tools.strokeOpacity }
   session.engine.cancelStroke()
   if (op.t === 'clear' && !session.engine.hasPaint(point[0], point[1])) return
   session.engine.apply(op)

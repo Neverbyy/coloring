@@ -1,7 +1,7 @@
-import type { StrokeTool } from '#layers/coloring/shared/history'
+import { DEFAULT_WIDTH_INDEX, STROKE_OPACITIES, STROKE_WIDTHS, type PaintTool, type StrokeTool } from '#layers/coloring/shared/history'
 
 export type ColoringTool = StrokeTool
-export type DrawingTool = Exclude<ColoringTool, 'eraser'>
+export type DrawingTool = PaintTool
 
 export const COLORING_TOOLS: readonly ColoringTool[] = ['brush', 'pencil', 'eraser']
 
@@ -19,8 +19,16 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
   const color = ref('#1C41E8')
   const recentColors = ref<string[]>(['#12ABEC', '#EC12AB'])
   const paletteOpen = ref(false)
+  const optionsOpen = ref(false)
+  const widths = ref<Record<DrawingTool, number>>({ brush: DEFAULT_WIDTH_INDEX, pencil: DEFAULT_WIDTH_INDEX })
+  const opacities = ref<Record<DrawingTool, number>>({ brush: 0, pencil: 0 })
+
+  const paintTool = computed<DrawingTool>(() => tool.value === 'eraser' ? lastDrawingTool.value : tool.value)
+  const strokeWidth = computed(() => STROKE_WIDTHS[paintTool.value][widths.value[paintTool.value]]!)
+  const strokeOpacity = computed(() => STROKE_OPACITIES[opacities.value[paintTool.value]]!)
 
   function selectTool(next: ColoringTool) {
+    optionsOpen.value = next === tool.value && next !== 'eraser' && !optionsOpen.value
     tool.value = next
     if (next !== 'eraser') lastDrawingTool.value = next
     paletteOpen.value = false
@@ -34,15 +42,43 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
     }
     if (tool.value === 'eraser') tool.value = lastDrawingTool.value
     paletteOpen.value = false
+    optionsOpen.value = false
+  }
+
+  function selectWidth(index: number) {
+    widths.value[paintTool.value] = index
+  }
+
+  function selectOpacity(index: number) {
+    opacities.value[paintTool.value] = index
   }
 
   function togglePalette() {
     paletteOpen.value = !paletteOpen.value
+    optionsOpen.value = false
   }
 
   function closePalette() {
     paletteOpen.value = false
+    optionsOpen.value = false
   }
 
-  return { tool, color, recentColors, paletteOpen, selectTool, selectColor, togglePalette, closePalette }
+  return {
+    tool,
+    color,
+    recentColors,
+    paletteOpen,
+    optionsOpen,
+    widths,
+    opacities,
+    paintTool,
+    strokeWidth,
+    strokeOpacity,
+    selectTool,
+    selectColor,
+    selectWidth,
+    selectOpacity,
+    togglePalette,
+    closePalette
+  }
 })
