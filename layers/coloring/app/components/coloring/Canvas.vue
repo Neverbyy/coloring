@@ -221,6 +221,7 @@ function fillByHold() {
     ? { t: 'clear', p: point }
     : { t: 'fill', tool: tools.tool, c: tools.color, p: point }
   session.engine.cancelStroke()
+  if (op.t === 'clear' && !session.engine.hasPaint(point[0], point[1])) return
   session.engine.apply(op)
   session.commit(op)
 }

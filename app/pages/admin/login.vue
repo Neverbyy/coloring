@@ -15,10 +15,9 @@ async function submit() {
   pending.value = true
   try {
     await store.login(username.value, password.value)
-    await navigateTo(safeAdminRedirect(route.query.redirect), { replace: true })
+    if (await navigateTo(safeAdminRedirect(route.query.redirect), { replace: true })) pending.value = false
   } catch (failure) {
     error.value = errorMessage(failure, 'Не получилось войти — проверьте интернет и попробуйте ещё раз')
-  } finally {
     pending.value = false
   }
 }

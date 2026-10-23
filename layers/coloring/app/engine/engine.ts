@@ -14,6 +14,7 @@ interface ActiveStroke {
   lastX: number
   lastY: number
   dirty: Box | null
+  restorable: boolean
 }
 
 function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
@@ -55,6 +56,8 @@ export class ColoringEngine {
   private readonly coverage: Float64Array
   private readonly countedBox: Box | null
   private active: ActiveStroke | null = null
+  private backup: CanvasRenderingContext2D | null = null
+  private probe: CanvasRenderingContext2D | null = null
 
   constructor(
     private readonly map: SegmentMap,
@@ -120,15 +123,33 @@ export class ColoringEngine {
 
     const px = this.clampX(x)
     const py = this.clampY(y)
+    const restorable = tool === 'eraser'
+    if (restorable) this.saveBackup(segment.box)
     this.active = {
-      op: { t: 'stroke', tool, c: tool === 'eraser' ? null : color, p: [px, py] },
+      op: { t: 'stroke', tool, c: restorable ? null : color, p: [px, py] },
       segment,
       lastX: px,
       lastY: py,
-      dirty: null
+      dirty: null,
+      restorable
     }
     this.drawPath([px, py])
     return true
+  }
+
+  hasPaint(x: number, y: number): boolean {
+    const segment = this.segmentAt(x, y)
+    if (!segment) return false
+    const { box, id } = segment
+    const data = this.read(this.paint.canvas, box)
+    const { width, paint } = this.map
+    for (let row = 0; row < box.h; row++) {
+      const offset = (box.y + row) * width + box.x
+      for (let column = 0; column < box.w; column++) {
+        if (paint[offset + column] === id && data[(row * box.w + column) * 4 + 3]! > 0) return true
+      }
+    }
+    return false
   }
 
   extendStroke(points: number[]) {
@@ -151,6 +172,11 @@ export class ColoringEngine {
   endStroke(measure = true): StrokeOp | null {
     const active = this.active
     if (!active) return null
+    if (active.restorable && !this.erased(active)) {
+      this.clearStroke(active)
+      this.active = null
+      return null
+    }
 
     if (active.op.tool !== 'eraser' && active.dirty) drawRegion(this.paint, this.preview.canvas, active.dirty)
     this.clearStroke(active)
@@ -160,8 +186,14 @@ export class ColoringEngine {
   }
 
   cancelStroke() {
-    if (!this.active) return
-    this.clearStroke(this.active)
+    const active = this.active
+    if (!active) return
+    if (active.restorable && active.dirty && this.backup) {
+      const { x, y, w, h } = active.dirty
+      this.paint.clearRect(x, y, w, h)
+      drawRegion(this.paint, this.backup.canvas, active.dirty)
+    }
+    this.clearStroke(active)
     this.active = null
   }
 
@@ -169,7 +201,7 @@ export class ColoringEngine {
     if (op.t === 'stroke') {
       const segment = this.segmentAt(op.p[0]!, op.p[1]!)
       if (!segment) return null
-      this.active = { op, segment, lastX: op.p[0]!, lastY: op.p[1]!, dirty: null }
+      this.active = { op, segment, lastX: op.p[0]!, lastY: op.p[1]!, dirty: null, restorable: false }
       this.drawPath(op.p, segment.box)
       this.endStroke(measure)
       return segment
@@ -367,6 +399,29 @@ export class ColoringEngine {
     this.paint.globalCompositeOperation = 'destination-out'
     draw()
     this.paint.restore()
+  }
+
+  private saveBackup(box: Box) {
+    this.backup ??= context2d(createCanvas(this.width, this.height))
+    this.backup.clearRect(box.x, box.y, box.w, box.h)
+    drawRegion(this.backup, this.paint.canvas, box)
+  }
+
+  private erased({ dirty }: ActiveStroke): boolean {
+    if (!dirty || !this.backup) return false
+    const before = this.read(this.backup.canvas, dirty)
+    const after = this.read(this.paint.canvas, dirty)
+    for (let i = 3; i < before.length; i += 4) {
+      if (before[i] !== after[i]) return true
+    }
+    return false
+  }
+
+  private read(source: HTMLCanvasElement, box: Box): Uint8ClampedArray {
+    this.probe ??= context2d(createCanvas(this.width, this.height), { willReadFrequently: true })
+    this.probe.clearRect(0, 0, box.w, box.h)
+    this.probe.drawImage(source, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h)
+    return this.probe.getImageData(0, 0, box.w, box.h).data
   }
 
   private clearStroke(active: ActiveStroke) {

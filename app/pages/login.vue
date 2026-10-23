@@ -40,10 +40,9 @@ async function submit() {
   pending.value = true
   try {
     await auth.login(country.value, normalizeUsername(username.value))
-    await navigateTo(safeRedirect(route.query.redirect), { replace: true })
+    if (await navigateTo(safeRedirect(route.query.redirect), { replace: true })) pending.value = false
   } catch (failure) {
     error.value = errorMessage(failure, 'Не получилось войти — проверь интернет и попробуй ещё раз')
-  } finally {
     pending.value = false
   }
 }

@@ -35,7 +35,7 @@ function onDrop(event: DragEvent) {
       :disabled="loading"
       @change="onChange"
     >
-    <span v-if="loading" class="import-card__spinner" />
+    <LoadingSpinner v-if="loading" />
     <img v-else class="import-card__icon" src="../../assets/icons/plus.svg" alt="" width="64" height="64">
     <span class="visually-hidden">{{ loading ? 'Готовим картинку…' : 'Добавить свою картинку (SVG)' }}</span>
   </label>
@@ -81,20 +81,5 @@ function onDrop(event: DragEvent) {
 .import-card__icon {
   display: block;
   transition: transform 0.3s $lift-easing;
-}
-
-.import-card__spinner {
-  width: 56px;
-  height: 56px;
-  border: 8px solid $color-frame;
-  border-top-color: $color-sky;
-  border-radius: 50%;
-  animation: import-card-spin 0.8s linear infinite;
-}
-
-@keyframes import-card-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 </style>

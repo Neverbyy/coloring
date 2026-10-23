@@ -405,6 +405,15 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   line-height: 32px;
   letter-spacing: 0.2px;
   color: #000;
+  text-shadow:
+    3px 0 #fff,
+    -3px 0 #fff,
+    0 3px #fff,
+    0 -3px #fff,
+    2px 2px #fff,
+    -2px 2px #fff,
+    2px -2px #fff,
+    -2px -2px #fff;
   pointer-events: none;
   transition: color 0.3s;
 }
