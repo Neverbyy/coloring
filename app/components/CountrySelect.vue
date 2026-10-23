@@ -21,17 +21,24 @@ const MAX_HEIGHT = 320
 const MIN_WIDTH = 280
 const MIN_SPACE = 220
 const TAP_SLOP = 10
+const ROW_HEIGHT = 44
+const COMPACT_ROW_HEIGHT = 36
+const OVERSCAN = 6
 
 const id = useId()
 const trigger = ref<HTMLButtonElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const search = ref<HTMLInputElement | null>(null)
 const list = ref<HTMLElement | null>(null)
+const listbox = ref<HTMLElement | null>(null)
 
 const open = ref(false)
 const query = ref('')
 const activeIndex = ref(-1)
 const placement = ref<{ style: Record<string, string>, up: boolean }>({ style: {}, up: false })
+const listScroll = ref(0)
+const listHeight = ref(MAX_HEIGHT)
+const rowHeight = computed(() => props.compact ? COMPACT_ROW_HEIGHT : ROW_HEIGHT)
 
 const selected = computed(() => props.options.find(option => option.code === model.value))
 
@@ -48,9 +55,40 @@ const filtered = computed(() => {
   return [...starting, ...containing]
 })
 
+const windowFirst = computed(() => virtualWindow(listScroll.value, listHeight.value, rowHeight.value, filtered.value.length, OVERSCAN).first)
+const windowLast = computed(() => virtualWindow(listScroll.value, listHeight.value, rowHeight.value, filtered.value.length, OVERSCAN).last)
+
+const visibleOptions = computed(() => {
+  const indexes: number[] = []
+  for (let index = windowFirst.value; index < windowLast.value; index++) indexes.push(index)
+  const active = activeIndex.value
+  if (active >= 0 && active < filtered.value.length && (active < windowFirst.value || active >= windowLast.value)) indexes.push(active)
+  return indexes.map(index => ({ index, option: filtered.value[index]! }))
+})
+
+function setListScroll(top: number) {
+  if (!list.value) return
+  list.value.scrollTop = top
+  listScroll.value = list.value.scrollTop
+}
+
+function onListScroll() {
+  if (list.value) listScroll.value = list.value.scrollTop
+}
+
+watch(list, (element, _previous, onCleanup) => {
+  if (!element) return
+  listHeight.value = element.clientHeight || MAX_HEIGHT
+  const observer = new ResizeObserver(() => {
+    listHeight.value = element.clientHeight
+  })
+  observer.observe(element)
+  onCleanup(() => observer.disconnect())
+})
+
 watch(filtered, () => {
   activeIndex.value = filtered.value.length ? 0 : -1
-  if (list.value) list.value.scrollTop = 0
+  setListScroll(0)
 })
 
 function optionId(index: number) {
@@ -92,19 +130,23 @@ function place() {
   }
 }
 
-function scrollToActive() {
-  const element = list.value?.querySelector<HTMLElement>(`#${CSS.escape(optionId(activeIndex.value))}`)
-  element?.scrollIntoView({ block: 'nearest' })
+function revealActive(center = false) {
+  const element = list.value
+  if (!element || activeIndex.value < 0) return
+  const inset = listbox.value?.offsetTop ?? 0
+  setListScroll(scrollTopToReveal(activeIndex.value, rowHeight.value, inset, element.scrollTop, element.clientHeight, center))
 }
 
 async function show() {
   query.value = ''
+  const selectedIndex = Math.max(0, filtered.value.findIndex(option => option.code === model.value))
+  activeIndex.value = selectedIndex
+  listScroll.value = scrollTopToReveal(selectedIndex, rowHeight.value, 0, 0, listHeight.value, true)
   place()
   open.value = true
   await nextTick()
-  activeIndex.value = Math.max(0, filtered.value.findIndex(option => option.code === model.value))
-  const element = list.value?.querySelector<HTMLElement>(`#${CSS.escape(optionId(activeIndex.value))}`)
-  if (element && list.value) list.value.scrollTop = element.offsetTop - list.value.clientHeight / 2 + element.offsetHeight / 2
+  activeIndex.value = selectedIndex
+  revealActive(true)
   if (!isTouchDevice()) search.value?.focus()
 }
 
@@ -130,7 +172,7 @@ function onKeydown(event: KeyboardEvent) {
     if (!count) return
     const step = event.key === 'ArrowDown' ? 1 : -1
     activeIndex.value = (activeIndex.value + step + count) % count
-    nextTick(scrollToActive)
+    revealActive()
   } else if (event.key === 'Enter') {
     event.preventDefault()
     const option = filtered.value[activeIndex.value]
@@ -246,26 +288,38 @@ onBeforeUnmount(() => listen(false))
             spellcheck="false"
             @keydown="onKeydown"
           >
-          <ul :id="`${id}-list`" ref="list" class="country-select__list" role="listbox" aria-label="Страны">
-            <li
-              v-for="(option, index) in filtered"
-              :id="optionId(index)"
-              :key="option.code"
-              class="country-select__option"
-              :class="{
-                'country-select__option--active': index === activeIndex,
-                'country-select__option--selected': option.code === model
-              }"
-              role="option"
-              :aria-selected="option.code === model"
-              @pointermove="activeIndex = index"
-              @click="choose(option)"
+          <div ref="list" class="country-select__list" :style="{ '--row-height': `${rowHeight}px` }" @scroll.passive="onListScroll">
+            <ul
+              :id="`${id}-list`"
+              ref="listbox"
+              class="country-select__options"
+              role="listbox"
+              aria-label="Страны"
+              :style="{ height: `${filtered.length * rowHeight}px` }"
             >
-              <img v-if="option.code" class="country-select__flag" :src="flagUrl(option.code)" alt="" width="24" height="18" loading="lazy">
-              <span class="country-select__label">{{ option.name }}</span>
-            </li>
-            <li v-if="!filtered.length" class="country-select__empty">Ничего не нашлось</li>
-          </ul>
+              <li
+                v-for="{ index, option } in visibleOptions"
+                :id="optionId(index)"
+                :key="option.code"
+                class="country-select__option"
+                :class="{
+                  'country-select__option--active': index === activeIndex,
+                  'country-select__option--selected': option.code === model
+                }"
+                :style="{ top: `${index * rowHeight}px` }"
+                role="option"
+                :aria-selected="option.code === model"
+                :aria-setsize="filtered.length"
+                :aria-posinset="index + 1"
+                @pointermove="activeIndex = index"
+                @click="choose(option)"
+              >
+                <img v-if="option.code" class="country-select__flag" :src="flagUrl(option.code)" alt="" width="24" height="18">
+                <span class="country-select__label">{{ option.name }}</span>
+              </li>
+            </ul>
+            <p v-if="!filtered.length" class="country-select__empty">Ничего не нашлось</p>
+          </div>
         </div>
       </Transition>
     </Teleport>
@@ -375,11 +429,19 @@ onBeforeUnmount(() => listen(false))
   overscroll-behavior: contain;
 }
 
+.country-select__options {
+  position: relative;
+  list-style: none;
+}
+
 .country-select__option {
+  position: absolute;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 44px;
+  height: var(--row-height);
   padding: 0 12px;
   border-radius: 14px;
   font-size: 18px;
@@ -451,7 +513,6 @@ onBeforeUnmount(() => listen(false))
 
   .country-select__option {
     gap: 8px;
-    min-height: 36px;
     padding: 0 10px;
     border-radius: 8px;
     font-size: 15px;
