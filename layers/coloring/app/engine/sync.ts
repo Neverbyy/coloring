@@ -51,6 +51,7 @@ interface PendingState {
 const DEBOUNCE_MS = 700
 const RETRY_MIN_MS = 2000
 const RETRY_MAX_MS = 30_000
+const KEEPALIVE_MAX_BYTES = 60 * 1024
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,7 +76,7 @@ export class HistorySync {
   private truncatedDuringSend: number | null = null
   private timer: ReturnType<typeof setTimeout> | undefined
   private retryDelay = RETRY_MIN_MS
-  private running = false
+  private running: Promise<void> | null = null
   private disposed = false
   private readonly onOnline = () => this.schedule(0)
   private readonly onHidden = () => {
@@ -172,11 +173,14 @@ export class HistorySync {
     clearTimeout(this.timer)
     window.removeEventListener('online', this.onOnline)
     document.removeEventListener('visibilitychange', this.onHidden)
-    if (!this.baseUnsent && this.dirty) this.sendHistory(true).catch(() => {})
-    const thumbnail = lastThumbnail ?? Promise.resolve(this.thumbnail)
-    thumbnail.then((image) => {
-      if (image) return this.sendThumbnail(image, true)
-    }).catch(() => {})
+    const flush = () => {
+      const history = !this.baseUnsent && this.dirty ? this.sendHistory(true).catch(() => {}) : undefined
+      Promise.all([lastThumbnail ?? this.thumbnail, history]).then(([image]) => {
+        if (image) return this.sendThumbnail(image)
+      }).catch(() => {})
+    }
+    if (this.running) this.running.then(flush)
+    else flush()
   }
 
   private get dirty(): boolean {
@@ -192,9 +196,14 @@ export class HistorySync {
     this.timer = setTimeout(() => this.run(), delay)
   }
 
-  private async run() {
+  private run() {
     if (this.running || this.disposed) return
-    this.running = true
+    this.running = this.cycle().finally(() => {
+      this.running = null
+    })
+  }
+
+  private async cycle() {
     try {
       if (this.baseUnsent || this.dirty) this.options.onStatus('saving')
       if (this.baseUnsent) await this.sendBase()
@@ -210,8 +219,6 @@ export class HistorySync {
       if (pending || this.thumbnail) this.schedule(0)
     } catch (error) {
       this.handleError(error)
-    } finally {
-      this.running = false
     }
   }
 
@@ -266,7 +273,11 @@ export class HistorySync {
       progress: source.progress()
     }
     this.truncatedDuringSend = null
-    await $fetch(this.url('/history'), { method: 'POST', body: save, keepalive })
+    await $fetch(this.url('/history'), {
+      method: 'POST',
+      body: save,
+      keepalive: keepalive && JSON.stringify(save).length <= KEEPALIVE_MAX_BYTES
+    })
 
     this.syncedPrefix = Math.min(fromSeq + save.ops.length, this.truncatedDuringSend ?? Number.POSITIVE_INFINITY)
     this.truncatedDuringSend = null
@@ -276,12 +287,11 @@ export class HistorySync {
     else this.clearPending()
   }
 
-  private sendThumbnail(image: Blob, keepalive = false) {
+  private sendThumbnail(image: Blob) {
     return $fetch(this.url('/thumbnail'), {
       method: 'PUT',
       body: image,
-      headers: { 'content-type': 'image/jpeg' },
-      keepalive
+      headers: { 'content-type': 'image/jpeg' }
     })
   }
 

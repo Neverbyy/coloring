@@ -4,6 +4,7 @@ import type { DrawingState, HistoryOp } from '../layers/coloring/shared/history'
 
 const KEY = 'coloring:v3:user:cat'
 const URL = '/api/coloring/arts/cat/history'
+const THUMBNAIL_URL = '/api/coloring/arts/cat/thumbnail'
 const op1: HistoryOp = { t: 'clear', p: [1, 1] }
 const op2: HistoryOp = { t: 'clear', p: [2, 2] }
 const EMPTY: DrawingState = { baseSeq: 0, hasBase: false, ops: [], cursor: 0, progress: 0 }
@@ -166,5 +167,63 @@ describe('автосохранение рисунка', () => {
     expect(fetchMock).toHaveBeenCalledWith(URL, expect.objectContaining({ keepalive: true, body: { fromSeq: 0, ops: [op1], cursor: 1, progress: 2 } }))
     await vi.advanceTimersByTimeAsync(10_000)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('миниатюра при уходе уходит без keepalive — у keepalive лимит 64 КБ, а миниатюра больше', async () => {
+    const { sync } = createSync()
+    fetchMock.mockResolvedValue({})
+    await sync.restore(EMPTY, null)
+
+    const image = new Blob(['jpeg'])
+    sync.dispose(Promise.resolve(image))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, options] = fetchMock.mock.calls[0]!
+    expect(url).toBe(THUMBNAIL_URL)
+    expect(options).toMatchObject({ method: 'PUT', body: image })
+    expect(options.keepalive).toBeUndefined()
+  })
+
+  it('большая история при уходе уходит обычным запросом, а не теряется на лимите keepalive', async () => {
+    const { state, sync } = createSync()
+    fetchMock.mockResolvedValue({})
+    await sync.restore(EMPTY, null)
+
+    const longStroke: HistoryOp = { t: 'stroke', tool: 'brush', c: '#ff0000', p: Array.from({ length: 20_000 }, (_, i) => i % 1000) }
+    Object.assign(state, { ops: [longStroke], cursor: 1, progress: 2 })
+    sync.changed()
+    sync.dispose()
+
+    expect(fetchMock).toHaveBeenCalledWith(URL, expect.objectContaining({ keepalive: false }))
+  })
+
+  it('уход во время отправки: последние изменения и миниатюра уходят после неё и по порядку', async () => {
+    const { state, sync } = createSync()
+    let finishFirst!: (value: unknown) => void
+    fetchMock.mockImplementationOnce(() => new Promise((resolve) => {
+      finishFirst = resolve
+    })).mockResolvedValue({})
+    await sync.restore(EMPTY, null)
+
+    Object.assign(state, { ops: [op1], cursor: 1, progress: 2 })
+    sync.changed()
+    await vi.advanceTimersByTimeAsync(700)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    Object.assign(state, { ops: [op1, op2], cursor: 2, progress: 4 })
+    sync.changed()
+    const image = new Blob(['jpeg'])
+    sync.dispose(Promise.resolve(image))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    finishFirst({})
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fetchMock.mock.calls.map(([url, options]) => [url, options.body])).toEqual([
+      [URL, { fromSeq: 0, ops: [op1], cursor: 1, progress: 2 }],
+      [URL, { fromSeq: 1, ops: [op2], cursor: 2, progress: 4 }],
+      [THUMBNAIL_URL, image]
+    ])
   })
 })
