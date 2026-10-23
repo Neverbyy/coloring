@@ -174,9 +174,10 @@ $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   transition: transform 0.2s $ease-out, opacity 0.2s;
 
   @include phone-portrait {
-    flex-direction: row;
+    flex-direction: row-reverse;
     width: fit-content;
     height: 100%;
+    margin-left: auto;
   }
 }
 
@@ -196,7 +197,7 @@ $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 
   @include phone-portrait {
-    flex-direction: row-reverse;
+    flex-direction: row;
   }
 }
 
