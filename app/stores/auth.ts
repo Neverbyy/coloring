@@ -3,6 +3,7 @@ export const useAuthStore = defineStore('auth', () => {
   const requestFetch = useRequestFetch()
 
   const user = ref<SessionUser | null>(null)
+  const previousUser = ref<SessionUser | null>(null)
   const loaded = ref(false)
 
   async function fetchUser() {
@@ -24,6 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function forget() {
     nuxtApp.$queryClient.clear()
+    if (user.value) previousUser.value = user.value
     user.value = null
     loaded.value = true
   }
@@ -33,5 +35,5 @@ export const useAuthStore = defineStore('auth', () => {
     return nuxtApp.runWithContext(() => navigateTo('/login'))
   }
 
-  return { user, loaded, fetchUser, login, logout, forget, expire }
+  return { user, previousUser, loaded, fetchUser, login, logout, forget, expire }
 })
