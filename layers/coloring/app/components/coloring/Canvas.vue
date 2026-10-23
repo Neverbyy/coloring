@@ -5,9 +5,9 @@ import { paperGeometry, type HistoryOp, type StrokeTool } from '#layers/coloring
 import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
 import { DrawingSession } from '#layers/coloring/app/engine/session'
 import { pendingStorageKey, type SyncStatus } from '#layers/coloring/app/engine/sync'
-import type { CanvasView } from '#layers/coloring/app/utils/zoom'
+import type { CanvasView, ZoomMode } from '#layers/coloring/app/utils/zoom'
 
-const props = defineProps<{ art: GalleryArt, zoomMode?: 'in' | 'out' | 'free' | null }>()
+const props = defineProps<{ art: GalleryArt, zoomMode?: ZoomMode | null }>()
 const emit = defineEmits<{
   progress: [value: number]
   history: [canUndo: boolean, canRedo: boolean]

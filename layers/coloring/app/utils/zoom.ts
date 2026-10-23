@@ -4,6 +4,8 @@ export interface CanvasView {
   y: number
 }
 
+export type ZoomMode = 'in' | 'out' | 'free'
+
 export const ZOOM_LEVELS: readonly number[] = [1, 1.5, 2.25, 3]
 export const ZOOM_MIN = 1
 export const ZOOM_MAX = 3

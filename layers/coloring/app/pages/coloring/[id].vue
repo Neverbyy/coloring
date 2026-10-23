@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { artApiPath } from '#layers/coloring/shared/gallery'
 import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
 import type { SyncStatus } from '#layers/coloring/app/engine/sync'
+import type { ZoomMode } from '#layers/coloring/app/utils/zoom'
 
 const route = useRoute()
 const tools = useColoringToolsStore()
@@ -32,9 +33,9 @@ const percent = computed(() => Math.floor(progress.value))
 const canUndo = ref(false)
 const canRedo = ref(false)
 const syncStatus = ref<SyncStatus>('saved')
-const zoomMode = ref<'in' | 'out' | 'free' | null>(null)
+const zoomMode = ref<ZoomMode | null>(null)
 
-function toggleZoom(mode: 'in' | 'out' | 'free') {
+function toggleZoom(mode: ZoomMode) {
   zoomMode.value = zoomMode.value === mode ? null : mode
 }
 
@@ -92,6 +93,9 @@ onBeforeUnmount(() => {
         <NuxtLink class="board__home" to="/coloring" aria-label="В галерею">
           <img src="../../assets/icons/home.svg" alt="" width="64" height="60">
         </NuxtLink>
+        <div class="board__controls">
+          <ColoringCanvasControls :zoom-mode="zoomMode" @reset="canvas?.clearAll()" @toggle="toggleZoom" />
+        </div>
         <button
           type="button"
           class="board__camera"
@@ -117,40 +121,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="frame__top">
-          <div class="frame__zoom">
-            <button type="button" class="frame__zoom-button" aria-label="Очистить рисунок" @click="canvas?.clearAll()">
-              <img src="../../assets/icons/reset.svg" alt="" width="64" height="60">
-            </button>
-            <button
-              type="button"
-              class="frame__zoom-button frame__zoom-button--lens"
-              :class="{ 'frame__zoom-button--active': zoomMode === 'in' }"
-              aria-label="Приблизить"
-              :aria-pressed="zoomMode === 'in'"
-              @click="toggleZoom('in')"
-            >
-              <img src="../../assets/icons/zoom_in.svg" alt="" width="64" height="60">
-            </button>
-            <button
-              type="button"
-              class="frame__zoom-button frame__zoom-button--lens"
-              :class="{ 'frame__zoom-button--active': zoomMode === 'out' }"
-              aria-label="Отдалить"
-              :aria-pressed="zoomMode === 'out'"
-              @click="toggleZoom('out')"
-            >
-              <img src="../../assets/icons/zoom_out.svg" alt="" width="64" height="60">
-            </button>
-            <button
-              type="button"
-              class="frame__zoom-button frame__zoom-button--touch"
-              :class="{ 'frame__zoom-button--active': zoomMode === 'free' }"
-              aria-label="Масштаб"
-              :aria-pressed="zoomMode === 'free'"
-              @click="toggleZoom('free')"
-            >
-              <img src="../../assets/icons/zoom.svg" alt="" width="64" height="60">
-            </button>
+          <div class="frame__controls">
+            <ColoringCanvasControls :zoom-mode="zoomMode" @reset="canvas?.clearAll()" @toggle="toggleZoom" />
           </div>
           <p class="frame__progress" :class="{ 'frame__progress--done': percent >= 100 }" aria-live="polite">
             {{ percent }}%
@@ -318,6 +290,16 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   animation: camera-hint 1.6s ease-in-out infinite;
 }
 
+.board__controls {
+  display: none;
+
+  @include phone-portrait {
+    display: block;
+    margin-left: auto;
+    margin-right: 8px;
+  }
+}
+
 @keyframes camera-hint {
   0%,
   60%,
@@ -397,8 +379,7 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   pointer-events: none;
 
   @include phone-portrait {
-    top: 76px;
-    max-width: calc(100% - 48px);
+    max-width: calc(100% - 160px);
   }
 }
 
@@ -460,50 +441,12 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   pointer-events: none;
 }
 
-.frame__zoom {
-  display: flex;
-  gap: 6px;
-  padding: 6px;
-  border-radius: 18px;
-  background: $color-frame;
+.frame__controls {
   pointer-events: auto;
-}
 
-.frame__zoom-button {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 2px solid rgba($color-progress, 0.25);
-  border-radius: 12px;
-  background: rgba(#fff, 0.5);
-  transition: transform 0.1s, background-color 0.15s, border-color 0.15s;
-  @include pressable(0.9);
-
-  img {
-    display: block;
-    width: 32px;
-    height: auto;
-  }
-}
-
-.frame__zoom-button--lens {
-  @include below-desktop {
+  @include phone-portrait {
     display: none;
   }
-}
-
-.frame__zoom-button--touch {
-  display: none;
-
-  @include below-desktop {
-    display: grid;
-  }
-}
-
-.frame__zoom-button--active {
-  border-color: $color-progress;
-  background: #fff;
 }
 
 .frame__progress {
