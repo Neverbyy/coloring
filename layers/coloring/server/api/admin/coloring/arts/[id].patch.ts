@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { MAX_ART_TITLE } from '#layers/coloring/shared/gallery'
+import { GALLERY_SIGNAL, MAX_ART_TITLE } from '#layers/coloring/shared/gallery'
 import type { AdminArtDetails } from '#layers/coloring/shared/admin'
 import { coloringArts } from '#layers/coloring/server/db/schema'
 
@@ -27,6 +27,9 @@ export default defineAdminHandler(async (event): Promise<AdminArtDetails> => {
     if (body.published && !art.publishedAt) set.publishedAt = new Date()
   }
 
-  if (Object.keys(set).length > 0) await useDb().update(coloringArts).set(set).where(eq(coloringArts.id, id))
+  if (Object.keys(set).length > 0) {
+    await useDb().update(coloringArts).set(set).where(eq(coloringArts.id, id))
+    if (art.published || set.published) await broadcastSignal(GALLERY_SIGNAL.channel, GALLERY_SIGNAL.event)
+  }
   return getAdminArt(id)
 })

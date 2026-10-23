@@ -1,13 +1,14 @@
 import { eq, inArray } from 'drizzle-orm'
 import { users } from '~~/server/db/schema'
 import type { AdminArtDetails } from '#layers/coloring/shared/admin'
+import { GALLERY_SIGNAL } from '#layers/coloring/shared/gallery'
 import { coloringArtCountries, coloringArtUsers, coloringArts } from '#layers/coloring/server/db/schema'
 
 const MAX_PLAYERS = 1000
 
 export default defineAdminHandler(async (event): Promise<AdminArtDetails> => {
   const id = artIdParam(event)
-  await requireAdminArt(id)
+  const art = await requireAdminArt(id)
   const body = await readBody<Record<string, unknown> | null>(event)
   const audience = body?.audience
   const countries = body?.countries
@@ -35,5 +36,6 @@ export default defineAdminHandler(async (event): Promise<AdminArtDetails> => {
       await tx.insert(coloringArtUsers).values(players.map(player => ({ artId: id, userId: player.id })))
     }
   })
+  if (art.published) await broadcastSignal(GALLERY_SIGNAL.channel, GALLERY_SIGNAL.event)
   return getAdminArt(id)
 })

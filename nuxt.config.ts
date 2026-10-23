@@ -9,7 +9,12 @@ export default defineNuxtConfig({
     typeCheck: false
   },
   runtimeConfig: {
-    databaseUrl: ''
+    databaseUrl: '',
+    supabaseSecretKey: '',
+    public: {
+      supabaseUrl: '',
+      supabasePublishableKey: ''
+    }
   },
   app: {
     head: {
@@ -45,7 +50,7 @@ export default defineNuxtConfig({
   },
   vite: {
     optimizeDeps: {
-      include: ['@tanstack/vue-query']
+      include: ['@tanstack/vue-query', '@supabase/realtime-js']
     },
     css: {
       preprocessorOptions: {

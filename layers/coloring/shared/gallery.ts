@@ -26,6 +26,8 @@ export interface GalleryPage {
 
 export const GALLERY_PAGE_SIZE = 11
 
+export const GALLERY_SIGNAL = { channel: 'coloring-gallery', event: 'changed' } as const
+
 export const MAX_SVG_BYTES = 1024 * 1024
 export const MAX_OWN_ARTS = 50
 export const MAX_ART_TITLE = 40
