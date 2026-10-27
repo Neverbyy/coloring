@@ -16,7 +16,7 @@ async function logout() {
 
 <template>
   <button type="button" class="logout-button" aria-label="Выйти" :disabled="leaving" @click="logout">
-    <img src="../../assets/icons/logout.svg" alt="" width="34" height="32">
+    <img src="~/assets/icons/logout.svg" alt="" width="34" height="32">
   </button>
 </template>
 

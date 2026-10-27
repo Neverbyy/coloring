@@ -27,9 +27,24 @@ export const STROKE_WIDTH_RANGES: Record<PaintTool, StrokeRange> = {
 }
 export const STROKE_OPACITY_RANGE: StrokeRange = { min: 0.1, max: 1, initial: 1 }
 
-export function parseStrokeWidth(tool: PaintTool, value: unknown): number | null {
-  const { min, max } = STROKE_WIDTH_RANGES[tool]
+export const STICKERS = ['heart', 'star', 'flower', 'butterfly', 'ladybug', 'rainbow'] as const
+export type StickerId = typeof STICKERS[number]
+export const STICKER_SIZE_RANGE: StrokeRange = { min: 64, max: 448, initial: 192 }
+
+function integerInRange({ min, max }: StrokeRange, value: unknown): number | null {
   return Number.isInteger(value) && (value as number) >= min && (value as number) <= max ? value as number : null
+}
+
+export function parseStrokeWidth(tool: PaintTool, value: unknown): number | null {
+  return integerInRange(STROKE_WIDTH_RANGES[tool], value)
+}
+
+export function parseStickerSize(value: unknown): number | null {
+  return integerInRange(STICKER_SIZE_RANGE, value)
+}
+
+export function isStickerId(value: unknown): value is StickerId {
+  return typeof value === 'string' && (STICKERS as readonly string[]).includes(value)
 }
 
 export function parseStrokeOpacity(value: unknown): number | null {
@@ -44,7 +59,8 @@ export interface StrokeOp { t: 'stroke', tool: StrokeTool, c: string | null, p: 
 export interface FillOp { t: 'fill', tool?: PaintTool, c: string, p: [number, number], a?: number }
 export interface ClearOp { t: 'clear', p: [number, number] }
 export interface ResetOp { t: 'reset' }
-export type HistoryOp = StrokeOp | FillOp | ClearOp | ResetOp
+export interface StickerOp { t: 'sticker', id: StickerId, p: [number, number], size: number }
+export type HistoryOp = StrokeOp | FillOp | ClearOp | ResetOp | StickerOp
 
 export interface DrawingState {
   baseSeq: number
@@ -148,6 +164,12 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
   }
 
   if (op.t === 'reset') return { t: 'reset' }
+
+  if (op.t === 'sticker') {
+    const point = toPoint(op.p)
+    const size = parseStickerSize(op.size)
+    return point && size !== null && isStickerId(op.id) ? { t: 'sticker', id: op.id, p: point, size } : null
+  }
 
   return null
 }

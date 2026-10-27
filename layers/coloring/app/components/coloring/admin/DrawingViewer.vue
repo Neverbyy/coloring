@@ -14,12 +14,13 @@ const art = computed(() => props.drawing.art)
 
 async function render() {
   const path = (suffix: string) => adminDrawingApiPath(props.userId, art.value.id, suffix)
-  const [drawingState, lineArt] = await Promise.all([
+  const [drawingState, lineArt, stickers] = await Promise.all([
     adminFetch<DrawingState>(path('/state')),
-    loadImage(art.value.image)
+    loadImage(art.value.image),
+    loadStickers()
   ])
   const paper = paperGeometry(art.value.width, art.value.height)
-  const engine = ColoringEngine.offscreen(segmentArt(lineArt, paper))
+  const engine = ColoringEngine.offscreen(segmentArt(lineArt, paper), stickers)
   if (drawingState.hasBase) {
     const base = await createImageBitmap(await adminFetch<Blob>(path('/base'), { responseType: 'blob' }))
     engine.restore(base)

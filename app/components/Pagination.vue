@@ -1,10 +1,13 @@
 <script setup lang="ts">
 const NuxtLink = resolveComponent('NuxtLink')
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   page: number
   pageCount: number
-}>()
+  label?: string
+}>(), {
+  label: 'Страницы'
+})
 
 const items = computed<(number | 'gap')[]>(() => {
   const { page, pageCount } = props
@@ -31,7 +34,7 @@ function pageLink(value: number) {
 </script>
 
 <template>
-  <nav class="pagination" aria-label="Страницы галереи">
+  <nav class="pagination" :aria-label="label">
     <component
       :is="prev ? NuxtLink : 'span'"
       class="pagination__item pagination__item--arrow"

@@ -1,4 +1,5 @@
 export default defineAppConfig({
+  games: [] as GameEntry[],
   admin: {
     sections: [
       { to: '/admin', label: 'Обзор' },

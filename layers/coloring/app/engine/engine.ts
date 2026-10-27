@@ -1,7 +1,27 @@
-import { MAX_STROKE_POINTS, type HistoryOp, type StrokeOp, type StrokeTool } from '#layers/coloring/shared/history'
+import { MAX_STROKE_POINTS, type HistoryOp, type StickerId, type StickerOp, type StrokeOp, type StrokeTool } from '#layers/coloring/shared/history'
 import type { Box, Segment, SegmentMap } from './segmentation'
 import { context2d, createCanvas } from './canvas'
 import { TOOL_STYLES, createPencilTexture } from './textures'
+
+export type LayerImage = HTMLImageElement | ImageBitmap | HTMLCanvasElement
+export type StickerImages = ReadonlyMap<StickerId, LayerImage>
+
+export interface EngineCanvases {
+  paint: HTMLCanvasElement
+  preview: HTMLCanvasElement
+  stickers: HTMLCanvasElement
+}
+
+export function isPackedSnapshot(imageWidth: number, imageHeight: number, width: number, height: number): boolean {
+  return imageHeight * width > imageWidth * height * 1.5
+}
+
+export function stickerBox(image: { width: number, height: number }, { p: [x, y], size }: StickerOp): Box {
+  const scale = size / Math.max(image.width, image.height)
+  const w = image.width * scale
+  const h = image.height * scale
+  return { x: x - w / 2, y: y - h / 2, w, h }
+}
 
 const SNAP_RADIUS = 10
 const MIN_POINT_DISTANCE = 2
@@ -48,6 +68,7 @@ export class ColoringEngine {
   readonly height: number
   private readonly paint: CanvasRenderingContext2D
   private readonly preview: CanvasRenderingContext2D
+  private readonly stickers: CanvasRenderingContext2D
   private readonly stroke: CanvasRenderingContext2D
   private readonly scratch: CanvasRenderingContext2D
   private readonly meter: CanvasRenderingContext2D
@@ -59,20 +80,22 @@ export class ColoringEngine {
   private active: ActiveStroke | null = null
   private backup: CanvasRenderingContext2D | null = null
   private probe: CanvasRenderingContext2D | null = null
+  private hasStickers = false
 
   constructor(
     private readonly map: SegmentMap,
-    paintCanvas: HTMLCanvasElement,
-    previewCanvas: HTMLCanvasElement
+    canvases: EngineCanvases,
+    private readonly stickerImages: StickerImages
   ) {
     this.width = map.width
     this.height = map.height
-    for (const canvas of [paintCanvas, previewCanvas]) {
+    for (const canvas of Object.values(canvases)) {
       canvas.width = this.width
       canvas.height = this.height
     }
-    this.paint = context2d(paintCanvas)
-    this.preview = context2d(previewCanvas)
+    this.paint = context2d(canvases.paint)
+    this.preview = context2d(canvases.preview)
+    this.stickers = context2d(canvases.stickers)
     this.stroke = context2d(createCanvas(this.width, this.height))
     this.scratch = context2d(createCanvas(this.width, this.height))
     this.texture = createPencilTexture(this.preview)
@@ -85,8 +108,9 @@ export class ColoringEngine {
     this.output = context2d(createCanvas(1, 1))
   }
 
-  static offscreen(map: SegmentMap): ColoringEngine {
-    return new ColoringEngine(map, createCanvas(map.width, map.height), createCanvas(map.width, map.height))
+  static offscreen(map: SegmentMap, stickerImages: StickerImages): ColoringEngine {
+    const canvas = () => createCanvas(map.width, map.height)
+    return new ColoringEngine(map, { paint: canvas(), preview: canvas(), stickers: canvas() }, stickerImages)
   }
 
   get drawing(): boolean {
@@ -142,6 +166,7 @@ export class ColoringEngine {
   }
 
   hasAnyPaint(): boolean {
+    if (this.hasStickers) return true
     const data = this.read(this.paint.canvas, { x: 0, y: 0, w: this.width, h: this.height })
     for (let i = 3; i < data.length; i += 4) {
       if (data[i]! > 0) return true
@@ -223,6 +248,11 @@ export class ColoringEngine {
       return null
     }
 
+    if (op.t === 'sticker') {
+      this.placeSticker(op)
+      return null
+    }
+
     const segment = this.segmentAt(op.p[0], op.p[1])
     if (!segment) return null
     if (op.t === 'fill') this.fillSegment(segment, op.c, op.tool === 'pencil', op.a ?? 1)
@@ -236,16 +266,30 @@ export class ColoringEngine {
     this.paint.clearRect(0, 0, this.width, this.height)
     this.preview.clearRect(0, 0, this.width, this.height)
     this.stroke.clearRect(0, 0, this.width, this.height)
+    this.stickers.clearRect(0, 0, this.width, this.height)
+    this.hasStickers = false
     this.coverage.fill(0)
   }
 
-  restore(image: CanvasImageSource) {
+  restore(image: LayerImage) {
     this.reset()
-    this.paint.drawImage(image, 0, 0, this.width, this.height)
+    const packed = isPackedSnapshot(image.width, image.height, this.width, this.height)
+    const layerHeight = packed ? image.height / 2 : image.height
+    this.paint.drawImage(image, 0, 0, image.width, layerHeight, 0, 0, this.width, this.height)
+    if (!packed) return
+    this.stickers.drawImage(image, 0, layerHeight, image.width, layerHeight, 0, 0, this.width, this.height)
+    this.hasStickers = true
   }
 
   snapshot(): Promise<Blob> {
-    return toBlob(this.paint.canvas, 'image/png')
+    if (!this.hasStickers) return toBlob(this.paint.canvas, 'image/png')
+    const packed = context2d(createCanvas(this.width, this.height * 2))
+    packed.drawImage(this.paint.canvas, 0, 0)
+    packed.drawImage(this.stickers.canvas, 0, this.height)
+    return toBlob(packed.canvas, 'image/png').finally(() => {
+      packed.canvas.width = 0
+      packed.canvas.height = 0
+    })
   }
 
   exportImage(lineArt: CanvasImageSource, art: Box): Promise<Blob> {
@@ -310,7 +354,17 @@ export class ColoringEngine {
     output.drawImage(this.paint.canvas, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height)
     output.globalCompositeOperation = 'multiply'
     output.drawImage(lineArt, (art.x - crop.x) * scale, (art.y - crop.y) * scale, art.w * scale, art.h * scale)
+    output.globalCompositeOperation = 'source-over'
+    if (this.hasStickers) output.drawImage(this.stickers.canvas, crop.x, crop.y, crop.w, crop.h, 0, 0, width, height)
     return output.canvas
+  }
+
+  private placeSticker(op: StickerOp) {
+    const image = this.stickerImages.get(op.id)
+    if (!image) return
+    const { x, y, w, h } = stickerBox(image, op)
+    this.stickers.drawImage(image, x, y, w, h)
+    this.hasStickers = true
   }
 
   private drawPath(points: number[], area?: Box) {

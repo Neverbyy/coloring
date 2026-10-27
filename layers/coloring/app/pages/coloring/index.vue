@@ -102,7 +102,7 @@ async function onDelete(art: GalleryArt) {
           </Transition>
 
           <div v-if="!swipe && data && data.pageCount > 1" class="gallery__pagination">
-            <ColoringPagination :page="data.page" :page-count="data.pageCount" />
+            <Pagination :page="data.page" :page-count="data.pageCount" label="Страницы галереи" />
           </div>
         </div>
       </div>
@@ -122,7 +122,7 @@ async function onDelete(art: GalleryArt) {
     </nav>
 
     <div class="gallery__toolbar">
-      <ColoringLogoutButton />
+      <HubButton />
       <MusicToggle />
     </div>
 

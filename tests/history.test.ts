@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  STICKERS,
+  STICKER_SIZE_RANGE,
   STROKE_OPACITY_RANGE,
   STROKE_WIDTH_RANGES,
   MAX_COORD,
@@ -96,6 +98,29 @@ describe('проверка операций истории с клиента', (
   it('сброс всего рисунка — без лишних полей', () => {
     expect(parseHistoryOp({ t: 'reset', p: [1, 2], c: COLOR, extra: '<script>' })).toEqual({ t: 'reset' })
   })
+
+  it('стикер принимается и очищается от лишних полей', () => {
+    expect(parseHistoryOp({ t: 'sticker', id: 'heart', p: [100, 200], size: 192, c: COLOR, src: 'https://evil.example/x.png' }))
+      .toEqual({ t: 'sticker', id: 'heart', p: [100, 200], size: 192 })
+    for (const id of STICKERS) expect(parseHistoryOp({ t: 'sticker', id, p: [0, 0], size: STICKER_SIZE_RANGE.min })).toMatchObject({ id })
+    expect(parseHistoryOp({ t: 'sticker', id: 'star', p: [MAX_COORD, MAX_COORD], size: STICKER_SIZE_RANGE.max })).not.toBeNull()
+  })
+
+  it.each([
+    ['чужой стикер', { t: 'sticker', id: 'skull', p: [1, 1], size: 192 }],
+    ['имя файла вместо стикера', { t: 'sticker', id: '../heart', p: [1, 1], size: 192 }],
+    ['без стикера', { t: 'sticker', p: [1, 1], size: 192 }],
+    ['без точки', { t: 'sticker', id: 'heart', size: 192 }],
+    ['точка за бумагой', { t: 'sticker', id: 'heart', p: [MAX_COORD + 1, 1], size: 192 }],
+    ['дробная точка', { t: 'sticker', id: 'heart', p: [1.5, 1], size: 192 }],
+    ['без размера', { t: 'sticker', id: 'heart', p: [1, 1] }],
+    ['размер меньше минимального', { t: 'sticker', id: 'heart', p: [1, 1], size: STICKER_SIZE_RANGE.min - 1 }],
+    ['размер больше максимального', { t: 'sticker', id: 'heart', p: [1, 1], size: STICKER_SIZE_RANGE.max + 1 }],
+    ['дробный размер', { t: 'sticker', id: 'heart', p: [1, 1], size: 192.5 }],
+    ['размер строкой', { t: 'sticker', id: 'heart', p: [1, 1], size: '192' }]
+  ])('стикер отклоняется: %s', (_, op) => {
+    expect(parseHistoryOp(op)).toBeNull()
+  })
 })
 
 describe('проверка сохранения истории', () => {
@@ -104,6 +129,12 @@ describe('проверка сохранения истории', () => {
   it('корректное сохранение', () => {
     expect(parseHistorySave({ fromSeq: 3, ops: [op], cursor: 4, progress: 12.5 }))
       .toEqual({ fromSeq: 3, ops: [op], cursor: 4, progress: 12.5 })
+  })
+
+  it('стикер сохраняется вместе с другими операциями', () => {
+    const sticker = { t: 'sticker', id: 'rainbow', p: [300, 400], size: 256 }
+    expect(parseHistorySave({ fromSeq: 0, ops: [op, sticker], cursor: 2, progress: 5 }))
+      .toEqual({ fromSeq: 0, ops: [op, sticker], cursor: 2, progress: 5 })
   })
 
   it('сброс сохраняется вместе с другими операциями', () => {

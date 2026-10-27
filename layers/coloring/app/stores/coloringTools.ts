@@ -1,14 +1,30 @@
-import { STROKE_OPACITY_RANGE, STROKE_WIDTH_RANGES, type PaintTool, type StrokeTool } from '#layers/coloring/shared/history'
+import {
+  STICKER_SIZE_RANGE,
+  STROKE_OPACITY_RANGE,
+  STROKE_WIDTH_RANGES,
+  type PaintTool,
+  type StickerId,
+  type StrokeTool
+} from '#layers/coloring/shared/history'
 
-export type ColoringTool = StrokeTool
+export type ColoringTool = StrokeTool | 'sticker'
 export type DrawingTool = PaintTool
 
-export const COLORING_TOOLS: readonly ColoringTool[] = ['brush', 'pencil', 'eraser']
+export const COLORING_TOOLS: readonly ColoringTool[] = ['brush', 'pencil', 'eraser', 'sticker']
 
 export const COLORING_TOOL_LABELS: Record<ColoringTool, string> = {
   brush: 'Кисть',
   pencil: 'Карандаш',
-  eraser: 'Ластик'
+  eraser: 'Ластик',
+  sticker: 'Стикеры'
+}
+
+export function hasOptions(tool: ColoringTool): boolean {
+  return tool !== 'eraser'
+}
+
+export function isPaintTool(tool: ColoringTool): tool is DrawingTool {
+  return tool === 'brush' || tool === 'pencil'
 }
 
 const RECENT_COLORS_LIMIT = 2
@@ -33,14 +49,17 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
     pencil: STROKE_OPACITY_RANGE.initial
   })
 
-  const paintTool = computed<DrawingTool>(() => tool.value === 'eraser' ? lastDrawingTool.value : tool.value)
+  const sticker = ref<StickerId>('heart')
+  const stickerSize = ref(STICKER_SIZE_RANGE.initial)
+
+  const paintTool = computed<DrawingTool>(() => isPaintTool(tool.value) ? tool.value : lastDrawingTool.value)
   const strokeWidth = computed(() => widths.value[paintTool.value])
   const strokeOpacity = computed(() => opacities.value[paintTool.value])
 
   function selectTool(next: ColoringTool) {
-    optionsOpen.value = next === tool.value && next !== 'eraser' && !optionsOpen.value
+    optionsOpen.value = next === tool.value && hasOptions(next) && !optionsOpen.value
     tool.value = next
-    if (next !== 'eraser') lastDrawingTool.value = next
+    if (isPaintTool(next)) lastDrawingTool.value = next
     paletteOpen.value = false
   }
 
@@ -50,9 +69,17 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
         .slice(0, RECENT_COLORS_LIMIT)
       color.value = hex
     }
-    if (tool.value === 'eraser') tool.value = lastDrawingTool.value
+    tool.value = paintTool.value
     paletteOpen.value = false
     optionsOpen.value = false
+  }
+
+  function selectSticker(id: StickerId) {
+    sticker.value = id
+  }
+
+  function setStickerSize(value: number) {
+    stickerSize.value = clamp(Math.round(value), STICKER_SIZE_RANGE.min, STICKER_SIZE_RANGE.max)
   }
 
   function setWidth(value: number) {
@@ -82,11 +109,15 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
     optionsOpen,
     widths,
     opacities,
+    sticker,
+    stickerSize,
     paintTool,
     strokeWidth,
     strokeOpacity,
     selectTool,
     selectColor,
+    selectSticker,
+    setStickerSize,
     setWidth,
     setOpacity,
     togglePalette,

@@ -79,7 +79,7 @@ onBeforeUnmount(() => {
     <div class="board" :class="{ 'board--shake': shaking }" @animationend.self="shaking = false">
       <div class="board__left">
         <NuxtLink class="board__home" to="/coloring" aria-label="В галерею">
-          <img src="../../assets/icons/home.svg" alt="" width="64" height="60">
+          <img src="~/assets/icons/home.svg" alt="" width="64" height="60">
         </NuxtLink>
         <div class="board__controls">
           <ColoringCanvasControls @reset="canvas?.clearAll()" />
@@ -154,7 +154,8 @@ onBeforeUnmount(() => {
         <ColoringSidePanel />
         <Transition name="board-options">
           <div v-if="tools.optionsOpen" class="board__options">
-            <ColoringStrokeOptions />
+            <ColoringStickerOptions v-if="tools.tool === 'sticker'" />
+            <ColoringStrokeOptions v-else />
           </div>
         </Transition>
       </div>
@@ -328,6 +329,13 @@ $board-chrome-x: 2 * $column-width + 2 * $frame-border;
   top: 8px;
   right: calc(100% + 8px);
   z-index: 10;
+  width: 232px;
+  padding: 12px 14px 10px;
+  border: 4px solid $color-frame;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba($color-ink, 0.18);
+  color: $color-ink;
   transform-origin: right top;
 
   @include phone-portrait {

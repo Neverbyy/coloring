@@ -1,5 +1,5 @@
 import type { DrawingState, HistoryOp } from '#layers/coloring/shared/history'
-import { ColoringEngine } from './engine'
+import { ColoringEngine, type StickerImages } from './engine'
 import { ColoringHistory } from './history'
 import type { SegmentMap } from './segmentation'
 import { HistorySync, type SyncStatus } from './sync'
@@ -10,6 +10,8 @@ export interface DrawingSessionOptions {
   map: SegmentMap
   paintCanvas: HTMLCanvasElement
   previewCanvas: HTMLCanvasElement
+  stickerCanvas: HTMLCanvasElement
+  stickerImages: StickerImages
   onChange: (byPlayer: boolean) => void
   onStatus: (status: SyncStatus) => void
   onUnauthorized: () => void
@@ -21,10 +23,14 @@ export class DrawingSession {
   private readonly sync: HistorySync
 
   constructor(private readonly options: DrawingSessionOptions) {
-    const { map } = options
-    const engine = new ColoringEngine(map, options.paintCanvas, options.previewCanvas)
+    const { map, stickerImages } = options
+    const engine = new ColoringEngine(
+      map,
+      { paint: options.paintCanvas, preview: options.previewCanvas, stickers: options.stickerCanvas },
+      stickerImages
+    )
     const history = new ColoringHistory(engine, {
-      createScratch: () => ColoringEngine.offscreen(map),
+      createScratch: () => ColoringEngine.offscreen(map, stickerImages),
       onBase: (_seq, base) => this.sync.baked(base)
     })
     this.engine = engine

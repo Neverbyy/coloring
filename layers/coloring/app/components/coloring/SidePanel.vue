@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool, type DrawingTool } from '#layers/coloring/app/stores/coloringTools'
+import {
+  COLORING_TOOLS,
+  COLORING_TOOL_LABELS,
+  hasOptions,
+  isPaintTool,
+  type ColoringTool,
+  type DrawingTool
+} from '#layers/coloring/app/stores/coloringTools'
 import { STROKE_WIDTH_RANGES } from '#layers/coloring/shared/history'
 
 const store = useColoringToolsStore()
-const { tool, color, recentColors, paletteOpen, optionsOpen, widths, opacities } = storeToRefs(store)
+const { tool, color, recentColors, paletteOpen, optionsOpen, widths, opacities, sticker } = storeToRefs(store)
 
 const BADGE_MIN = 6
 const BADGE_MAX = 14
@@ -57,7 +64,7 @@ const tools = computed<ColoringTool[]>(() => [tool.value, ...COLORING_TOOLS.filt
 const colorKind = computed<DrawingTool>(() => tool.value === 'brush' ? 'brush' : 'pencil')
 
 const colors = computed(() => {
-  if (tool.value === 'eraser') return []
+  if (!isPaintTool(tool.value)) return []
   const recent = paletteOpen.value ? recentColors.value : recentColors.value.slice(0, fit.value.recent)
   const pinned = [color.value, ...recent]
   if (!paletteOpen.value) return pinned
@@ -108,18 +115,26 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           :class="{ 'side-panel__button--active': item === tool }"
           :aria-label="COLORING_TOOL_LABELS[item]"
           :aria-pressed="item === tool"
-          :aria-expanded="item === tool && item !== 'eraser' ? optionsOpen : undefined"
+          :aria-expanded="item === tool && hasOptions(item) ? optionsOpen : undefined"
           :tabindex="paletteOpen ? -1 : undefined"
           @click="store.selectTool(item)"
         >
           <span class="side-panel__sprite">
+            <img
+              v-if="item === 'sticker'"
+              class="side-panel__sticker"
+              :src="STICKER_IMAGES[sticker]"
+              alt=""
+              draggable="false"
+            >
             <ColoringSprite
+              v-else
               :kind="item"
-              :color="item === tool && item !== 'eraser' ? color : undefined"
+              :color="item === tool && isPaintTool(item) ? color : undefined"
               :flip="item !== 'brush'"
             />
           </span>
-          <span v-if="item === tool && item !== 'eraser'" class="side-panel__badge" aria-hidden="true">
+          <span v-if="item === tool && isPaintTool(item)" class="side-panel__badge" aria-hidden="true">
             <span
               class="side-panel__badge-dot"
               :style="{ '--size': `${badgeSize(item)}px`, background: color, opacity: opacities[item] }"
@@ -277,6 +292,20 @@ $ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
 .side-panel__button--active .side-panel__sprite {
   --offset: 0px;
+}
+
+.side-panel__sticker {
+  position: absolute;
+  top: 0;
+  left: 10px;
+  width: 44px;
+  height: 44px;
+  padding: 2px;
+  object-fit: contain;
+
+  @include phone-portrait {
+    transform: rotate(-90deg);
+  }
 }
 
 .side-panel__badge {

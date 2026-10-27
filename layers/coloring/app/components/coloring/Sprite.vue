@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import type { ColoringTool } from '#layers/coloring/app/stores/coloringTools'
+import type { StrokeTool } from '#layers/coloring/shared/history'
 
 withDefaults(defineProps<{
-  kind: ColoringTool
+  kind: StrokeTool
   color?: string
   flip?: boolean
 }>(), {

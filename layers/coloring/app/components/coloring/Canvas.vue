@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useQueryClient } from '@tanstack/vue-query'
 import type { GalleryArt } from '#layers/coloring/shared/gallery'
-import { paperGeometry, type HistoryOp, type StrokeTool } from '#layers/coloring/shared/history'
+import { paperGeometry, type HistoryOp, type StickerId, type StrokeTool } from '#layers/coloring/shared/history'
 import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
 import { DrawingSession } from '#layers/coloring/app/engine/session'
 import { pendingStorageKey, type SyncStatus } from '#layers/coloring/app/engine/sync'
@@ -31,6 +31,7 @@ const queryClient = useQueryClient()
 const stage = ref<HTMLElement | null>(null)
 const paintCanvas = ref<HTMLCanvasElement | null>(null)
 const previewCanvas = ref<HTMLCanvasElement | null>(null)
+const stickerCanvas = ref<HTMLCanvasElement | null>(null)
 const lineArt = ref<HTMLImageElement | null>(null)
 
 const ready = ref(false)
@@ -38,6 +39,7 @@ const failed = ref(false)
 const busy = ref(false)
 const hold = ref<{ x: number, y: number } | null>(null)
 const view = ref<CanvasView>({ ...INITIAL_VIEW })
+const ghost = ref<{ id: StickerId, x: number, y: number, size: number, state: 'hover' | 'held' | 'drop' } | null>(null)
 
 const ratio = computed(() => props.art.width / props.art.height)
 const viewStyle = computed(() => ({
@@ -49,6 +51,17 @@ const placeholder = computed(() => previews.get(props.art.id)?.thumbnail ?? prop
 const artRegion = computed(() => {
   const { art } = paper.value
   return { x: art.x, y: art.y, w: art.width, h: art.height }
+})
+const ghostStyle = computed(() => {
+  if (!ghost.value) return undefined
+  const { width, height } = paper.value
+  const { x, y, size } = ghost.value
+  return {
+    left: `${x / width * 100}%`,
+    top: `${y / height * 100}%`,
+    width: `${size / width * 100}%`,
+    height: `${size / height * 100}%`
+  }
 })
 
 let session: DrawingSession | null = null
@@ -67,6 +80,7 @@ let strokeTool: StrokeTool = 'brush'
 let strokeSound: LoopHandle | null = null
 let strokeSoundTimer: ReturnType<typeof setTimeout> | undefined
 let strokeStartedAt = 0
+let placing = false
 const fingers = new Map<number, { x: number, y: number }>()
 let pinch: { distance: number, x: number, y: number, view: CanvasView } | null = null
 let wheelPending = 0
@@ -80,9 +94,11 @@ async function init() {
   session = null
   try {
     const drawingPromise = fetchDrawing(queryClient, props.art)
+    const stickersPromise = loadStickers()
     const image = lineArt.value!
     await image.decode()
     const map = segmentArt(image, paper.value)
+    const stickerImages = await stickersPromise
 
     const current = new DrawingSession({
       artId: props.art.id,
@@ -90,6 +106,8 @@ async function init() {
       map,
       paintCanvas: paintCanvas.value!,
       previewCanvas: previewCanvas.value!,
+      stickerCanvas: stickerCanvas.value!,
+      stickerImages,
       onChange: report,
       onStatus: status => emit('status', status),
       onUnauthorized: () => auth.expire()
@@ -167,7 +185,8 @@ function pinchFingers() {
 
 function startPinch() {
   stopWheelZoom()
-  if (pointerId !== null) interruptStroke()
+  if (placing) cancelSticker()
+  else if (pointerId !== null) interruptStroke()
   const pair = pinchFingers()
   pinch = pair && { ...pair, view: { ...view.value } }
 }
@@ -181,6 +200,7 @@ function movePinch() {
 
 function onWheel(event: WheelEvent) {
   if (!ready.value || pointerId !== null || pinch) return
+  if (ghost.value?.state === 'hover') ghost.value = null
   wheelPoint = stagePoint(event.clientX, event.clientY)
   wheelPending = addWheelZoom(view.value.scale, wheelPending, wheelDelta(event.deltaY, event.deltaMode, event.ctrlKey))
   if (!wheelFrame) {
@@ -217,10 +237,18 @@ function onPointerDown(event: PointerEvent) {
   if (!event.isPrimary || event.button !== 0) return
   stopWheelZoom()
   canvasRect = paintCanvas.value!.getBoundingClientRect()
+  const tool = tools.tool
+  if (tool === 'sticker') {
+    placing = true
+    pointerId = event.pointerId
+    stage.value!.setPointerCapture(pointerId)
+    moveGhost(event, 'held')
+    return
+  }
   const [x, y] = toWork(event)
-  if (!session.engine.beginStroke(tools.tool, tools.color, x, y, tools.strokeWidth, tools.strokeOpacity)) return
+  if (!session.engine.beginStroke(tool, tools.color, x, y, tools.strokeWidth, tools.strokeOpacity)) return
 
-  strokeTool = tools.tool
+  strokeTool = tool
   strokeStartedAt = performance.now()
   pointerId = event.pointerId
   stage.value!.setPointerCapture(pointerId)
@@ -237,6 +265,14 @@ function onPointerMove(event: PointerEvent) {
       movePinch()
       return
     }
+  }
+  if (placing) {
+    if (event.pointerId === pointerId) moveGhost(event, 'held')
+    return
+  }
+  if (pointerId === null && event.pointerType !== 'touch' && tools.tool === 'sticker' && ready.value) {
+    moveGhost(event, 'hover')
+    return
   }
   if (event.pointerId !== pointerId || !session?.engine.drawing) return
   const coalesced = event.getCoalescedEvents?.() ?? []
@@ -283,8 +319,54 @@ function onPointerUp(event: PointerEvent) {
     }
     return
   }
-  if (event.pointerId === pointerId) finishStroke()
+  if (event.pointerId !== pointerId) return
+  if (placing) dropSticker()
+  else finishStroke()
 }
+
+function onPointerLeave() {
+  if (ghost.value?.state === 'hover') ghost.value = null
+}
+
+function moveGhost(event: PointerEvent, state: 'hover' | 'held') {
+  const { engine } = session!
+  const [x, y] = toWork(event)
+  ghost.value = {
+    id: tools.sticker,
+    x: Math.min(engine.width, Math.max(0, Math.round(x))),
+    y: Math.min(engine.height, Math.max(0, Math.round(y))),
+    size: tools.stickerSize,
+    state
+  }
+}
+
+function dropSticker() {
+  const current = ghost.value
+  placing = false
+  pointerId = null
+  canvasRect = null
+  if (!session || !current || current.state !== 'held') return
+  const op: HistoryOp = { t: 'sticker', id: current.id, p: [current.x, current.y], size: current.size }
+  session.engine.apply(op)
+  session.commit(op)
+  playSound(COLORING_SOUNDS.sticker)
+  ghost.value = { ...current, state: 'drop' }
+}
+
+function cancelSticker() {
+  placing = false
+  pointerId = null
+  canvasRect = null
+  ghost.value = null
+}
+
+function onGhostAnimationEnd() {
+  if (ghost.value?.state === 'drop') ghost.value = null
+}
+
+watch(() => tools.tool, (tool) => {
+  if (tool !== 'sticker' && ghost.value?.state === 'hover') ghost.value = null
+})
 
 function finishStroke() {
   pointerId = null
@@ -319,14 +401,15 @@ function cancelHold() {
 
 function fillByHold() {
   const start = holdStart
+  const tool = strokeTool
   cancelHold()
   if (!session?.engine.drawing || !start) return
   stopStrokeSound()
   pendingPoints = []
   const point: [number, number] = [Math.round(start.x), Math.round(start.y)]
-  const op: HistoryOp = tools.tool === 'eraser'
+  const op: HistoryOp = tool === 'eraser'
     ? { t: 'clear', p: point }
-    : { t: 'fill', tool: tools.tool, c: tools.color, p: point, a: tools.strokeOpacity }
+    : { t: 'fill', tool, c: tools.color, p: point, a: tools.strokeOpacity }
   session.engine.cancelStroke()
   if (op.t === 'clear' && !session.engine.hasPaint(point[0], point[1])) return
   session.engine.apply(op)
@@ -410,6 +493,7 @@ defineExpose({ undo, redo, exportImage, clearAll })
     @pointerup="onPointerUp"
     @pointercancel="onPointerUp"
     @lostpointercapture="onPointerUp"
+    @pointerleave="onPointerLeave"
   >
     <div class="art-canvas__view" :style="viewStyle">
       <div class="art-canvas__paper" :style="paperStyle">
@@ -426,6 +510,19 @@ defineExpose({ undo, redo, exportImage, clearAll })
         <canvas ref="previewCanvas" class="art-canvas__layer" />
       </div>
       <img ref="lineArt" class="art-canvas__lines" :src="art.image" :alt="art.title" draggable="false">
+      <div class="art-canvas__paper" :style="paperStyle">
+        <canvas ref="stickerCanvas" class="art-canvas__layer" />
+        <img
+          v-if="ghost"
+          class="art-canvas__ghost"
+          :class="`art-canvas__ghost--${ghost.state}`"
+          :style="ghostStyle"
+          :src="STICKER_IMAGES[ghost.id]"
+          alt=""
+          draggable="false"
+          @animationend="onGhostAnimationEnd"
+        >
+      </div>
     </div>
     <span
       v-if="hold"
@@ -478,6 +575,39 @@ defineExpose({ undo, redo, exportImage, clearAll })
 .art-canvas__lines {
   mix-blend-mode: multiply;
   pointer-events: none;
+}
+
+.art-canvas__ghost {
+  position: absolute;
+  object-fit: contain;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.art-canvas__ghost--hover {
+  opacity: 0.55;
+}
+
+.art-canvas__ghost--held {
+  filter: drop-shadow(0 6px 6px rgba($color-ink, 0.35));
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.art-canvas__ghost--drop {
+  animation: art-canvas-sticker-drop 0.18s ease-out forwards;
+}
+
+@keyframes art-canvas-sticker-drop {
+  from {
+    filter: drop-shadow(0 6px 6px rgba($color-ink, 0.35));
+    transform: translate(-50%, -50%) scale(1.08);
+  }
+
+  to {
+    opacity: 0;
+    filter: drop-shadow(0 0 0 rgba($color-ink, 0));
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 .art-canvas__hold {
