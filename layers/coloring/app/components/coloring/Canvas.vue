@@ -5,9 +5,9 @@ import { paperGeometry, type HistoryOp, type StrokeTool } from '#layers/coloring
 import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
 import { DrawingSession } from '#layers/coloring/app/engine/session'
 import { pendingStorageKey, type SyncStatus } from '#layers/coloring/app/engine/sync'
-import type { CanvasView, ZoomMode } from '#layers/coloring/app/utils/zoom'
+import type { CanvasView } from '#layers/coloring/app/utils/zoom'
 
-const props = defineProps<{ art: GalleryArt, zoomMode?: ZoomMode | null }>()
+const props = defineProps<{ art: GalleryArt }>()
 const emit = defineEmits<{
   progress: [value: number]
   history: [canUndo: boolean, canRedo: boolean]
@@ -20,7 +20,8 @@ const HOLD_TOLERANCE = 10
 const IMAGES_IDLE_MS = 1500
 const STROKE_SOUND_IDLE_MS = 150
 const THUMBNAIL_SIZE = 720
-const TAP_SLOP = 8
+const PINCH_GRACE_MS = 300
+const WHEEL_SMOOTH_MS = 50
 
 const tools = useColoringToolsStore()
 const auth = useAuthStore()
@@ -37,7 +38,6 @@ const failed = ref(false)
 const busy = ref(false)
 const hold = ref<{ x: number, y: number } | null>(null)
 const view = ref<CanvasView>({ ...INITIAL_VIEW })
-const panning = ref(false)
 
 const ratio = computed(() => props.art.width / props.art.height)
 const viewStyle = computed(() => ({
@@ -66,10 +66,13 @@ let thumbnailStale = false
 let strokeTool: StrokeTool = 'brush'
 let strokeSound: LoopHandle | null = null
 let strokeSoundTimer: ReturnType<typeof setTimeout> | undefined
-let zoomGesture: { id: number, startX: number, startY: number, lastX: number, lastY: number, moved: boolean } | null = null
+let strokeStartedAt = 0
 const fingers = new Map<number, { x: number, y: number }>()
 let pinch: { distance: number, x: number, y: number, view: CanvasView } | null = null
-let panAnchor: { x: number, y: number } | null = null
+let wheelPending = 0
+let wheelPoint = { x: 0, y: 0 }
+let wheelFrame = 0
+let wheelTime = 0
 
 async function init() {
   failed.value = false
@@ -151,39 +154,6 @@ function toWork(event: PointerEvent): [number, number] {
   ]
 }
 
-function startZoomGesture(event: PointerEvent) {
-  if (zoomGesture || !event.isPrimary || event.button !== 0) return
-  zoomGesture = { id: event.pointerId, startX: event.clientX, startY: event.clientY, lastX: event.clientX, lastY: event.clientY, moved: false }
-  stage.value!.setPointerCapture(event.pointerId)
-}
-
-function moveZoomGesture(event: PointerEvent) {
-  const gesture = zoomGesture
-  if (!gesture || event.pointerId !== gesture.id) return
-  if (!gesture.moved && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) <= TAP_SLOP) return
-  gesture.moved = true
-  panning.value = true
-  const { offsetWidth, offsetHeight } = stage.value!
-  view.value = panBy(view.value, (event.clientX - gesture.lastX) / offsetWidth, (event.clientY - gesture.lastY) / offsetHeight)
-  gesture.lastX = event.clientX
-  gesture.lastY = event.clientY
-}
-
-function endZoomGesture(event: PointerEvent) {
-  const gesture = zoomGesture
-  if (!gesture || event.pointerId !== gesture.id) return
-  zoomGesture = null
-  panning.value = false
-  if (gesture.moved || event.type !== 'pointerup' || !props.zoomMode) return
-  const rect = stage.value!.getBoundingClientRect()
-  view.value = zoomAt(
-    view.value,
-    props.zoomMode === 'in' ? 1 : -1,
-    (event.clientX - rect.left) / rect.width - 0.5,
-    (event.clientY - rect.top) / rect.height - 0.5
-  )
-}
-
 function stagePoint(clientX: number, clientY: number) {
   const rect = stage.value!.getBoundingClientRect()
   return { x: (clientX - rect.left) / rect.width - 0.5, y: (clientY - rect.top) / rect.height - 0.5 }
@@ -195,55 +165,63 @@ function pinchFingers() {
   return { distance: Math.hypot(a.x - b.x, a.y - b.y), ...stagePoint((a.x + b.x) / 2, (a.y + b.y) / 2) }
 }
 
-function regroupFingers() {
+function startPinch() {
+  stopWheelZoom()
+  if (pointerId !== null) interruptStroke()
   const pair = pinchFingers()
   pinch = pair && { ...pair, view: { ...view.value } }
-  const [single] = fingers.values()
-  panAnchor = !pair && single ? { ...single } : null
-  panning.value = fingers.size > 0
 }
 
-function startFreeGesture(event: PointerEvent) {
-  fingers.set(event.pointerId, { x: event.clientX, y: event.clientY })
-  stage.value!.setPointerCapture(event.pointerId)
-  regroupFingers()
-}
-
-function moveFreeGesture(event: PointerEvent) {
-  fingers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+function movePinch() {
   const pair = pinchFingers()
-  if (pinch && pair) {
-    const ratio = pinch.distance > 0 ? pair.distance / pinch.distance : 1
-    view.value = pinchView(pinch.view, ratio, pinch.x, pinch.y, pair.x, pair.y)
-    return
-  }
-  if (!panAnchor) return
-  const { offsetWidth, offsetHeight } = stage.value!
-  view.value = panBy(view.value, (event.clientX - panAnchor.x) / offsetWidth, (event.clientY - panAnchor.y) / offsetHeight)
-  panAnchor = { x: event.clientX, y: event.clientY }
+  if (!pinch || !pair) return
+  const ratio = pinch.distance > 0 ? pair.distance / pinch.distance : 1
+  view.value = pinchView(pinch.view, ratio, pinch.x, pinch.y, pair.x, pair.y)
 }
 
-function endFreeGesture(event: PointerEvent) {
-  fingers.delete(event.pointerId)
-  regroupFingers()
+function onWheel(event: WheelEvent) {
+  if (!ready.value || pointerId !== null || pinch) return
+  wheelPoint = stagePoint(event.clientX, event.clientY)
+  wheelPending = addWheelZoom(view.value.scale, wheelPending, wheelDelta(event.deltaY, event.deltaMode, event.ctrlKey))
+  if (!wheelFrame) {
+    wheelTime = performance.now()
+    wheelFrame = requestAnimationFrame(stepWheel)
+  }
+}
+
+function stepWheel(now: number) {
+  const fraction = 1 - Math.exp(-Math.max(0, now - wheelTime) / WHEEL_SMOOTH_MS)
+  wheelTime = now
+  const next = stepWheelZoom(view.value, wheelPending, wheelPoint.x, wheelPoint.y, fraction)
+  view.value = next.view
+  wheelPending = next.pending
+  wheelFrame = wheelPending ? requestAnimationFrame(stepWheel) : 0
+}
+
+function stopWheelZoom() {
+  cancelAnimationFrame(wheelFrame)
+  wheelFrame = 0
+  wheelPending = 0
 }
 
 function onPointerDown(event: PointerEvent) {
-  if (props.zoomMode === 'free') {
-    startFreeGesture(event)
-    return
+  if (event.pointerType === 'touch') {
+    fingers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    stage.value!.setPointerCapture(event.pointerId)
+    if (fingers.size >= 2) {
+      startPinch()
+      return
+    }
   }
-  if (props.zoomMode) {
-    startZoomGesture(event)
-    return
-  }
-  if (!ready.value || busy.value || !session || pointerId !== null) return
+  if (pinch || !ready.value || busy.value || !session || pointerId !== null) return
   if (!event.isPrimary || event.button !== 0) return
+  stopWheelZoom()
   canvasRect = paintCanvas.value!.getBoundingClientRect()
   const [x, y] = toWork(event)
   if (!session.engine.beginStroke(tools.tool, tools.color, x, y, tools.strokeWidth, tools.strokeOpacity)) return
 
   strokeTool = tools.tool
+  strokeStartedAt = performance.now()
   pointerId = event.pointerId
   stage.value!.setPointerCapture(pointerId)
   const rect = stage.value!.getBoundingClientRect()
@@ -254,12 +232,11 @@ function onPointerDown(event: PointerEvent) {
 
 function onPointerMove(event: PointerEvent) {
   if (fingers.has(event.pointerId)) {
-    moveFreeGesture(event)
-    return
-  }
-  if (zoomGesture) {
-    moveZoomGesture(event)
-    return
+    fingers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    if (pinch) {
+      movePinch()
+      return
+    }
   }
   if (event.pointerId !== pointerId || !session?.engine.drawing) return
   const coalesced = event.getCoalescedEvents?.() ?? []
@@ -298,15 +275,18 @@ function stopStrokeSound() {
 }
 
 function onPointerUp(event: PointerEvent) {
-  if (fingers.has(event.pointerId)) {
-    endFreeGesture(event)
+  if (fingers.delete(event.pointerId) && pinch) {
+    if (fingers.size >= 2) {
+      startPinch()
+    } else {
+      pinch = null
+    }
     return
   }
-  if (zoomGesture) {
-    endZoomGesture(event)
-    return
-  }
-  if (event.pointerId !== pointerId) return
+  if (event.pointerId === pointerId) finishStroke()
+}
+
+function finishStroke() {
   pointerId = null
   canvasRect = null
   cancelHold()
@@ -314,6 +294,21 @@ function onPointerUp(event: PointerEvent) {
   drawPending()
   const op = session?.engine.endStroke()
   if (op) session!.commit(op)
+}
+
+function interruptStroke() {
+  if (performance.now() - strokeStartedAt >= PINCH_GRACE_MS) {
+    finishStroke()
+    return
+  }
+  pointerId = null
+  canvasRect = null
+  cancelHold()
+  stopStrokeSound()
+  cancelAnimationFrame(frame)
+  frame = 0
+  pendingPoints = []
+  session?.engine.cancelStroke()
 }
 
 function cancelHold() {
@@ -395,6 +390,7 @@ onBeforeUnmount(() => {
   clearTimeout(holdTimer)
   clearTimeout(imagesTimer)
   cancelAnimationFrame(frame)
+  stopWheelZoom()
   stopStrokeSound()
   forgetDrawing(queryClient, props.art.id)
   session?.dispose(thumbnailStale ? updateThumbnail() : undefined)
@@ -407,13 +403,8 @@ defineExpose({ undo, redo, exportImage, clearAll })
   <div
     ref="stage"
     class="art-canvas"
-    :class="{
-      'art-canvas--zoom-in': zoomMode === 'in',
-      'art-canvas--zoom-out': zoomMode === 'out',
-      'art-canvas--grab': zoomMode === 'free',
-      'art-canvas--panning': panning
-    }"
     :style="{ '--ratio': ratio }"
+    @wheel.prevent="onWheel"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
@@ -457,30 +448,10 @@ defineExpose({ undo, redo, exportImage, clearAll })
   touch-action: none;
 }
 
-.art-canvas--zoom-in {
-  cursor: zoom-in;
-}
-
-.art-canvas--zoom-out {
-  cursor: zoom-out;
-}
-
-.art-canvas--grab {
-  cursor: grab;
-}
-
-.art-canvas--panning {
-  cursor: grabbing;
-}
-
 .art-canvas__view {
   position: absolute;
   inset: 0;
-  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.art-canvas--panning .art-canvas__view {
-  transition: none;
+  will-change: transform;
 }
 
 .art-canvas__paper {

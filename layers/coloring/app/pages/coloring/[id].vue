@@ -3,7 +3,6 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { artApiPath } from '#layers/coloring/shared/gallery'
 import { COLORING_SOUNDS } from '#layers/coloring/shared/sounds'
 import type { SyncStatus } from '#layers/coloring/app/engine/sync'
-import type { ZoomMode } from '#layers/coloring/app/utils/zoom'
 
 const route = useRoute()
 const tools = useColoringToolsStore()
@@ -33,17 +32,6 @@ const percent = computed(() => Math.floor(progress.value))
 const canUndo = ref(false)
 const canRedo = ref(false)
 const syncStatus = ref<SyncStatus>('saved')
-const zoomMode = ref<ZoomMode | null>(null)
-
-function toggleZoom(mode: ZoomMode) {
-  zoomMode.value = zoomMode.value === mode ? null : mode
-}
-
-const narrowScreen = useMediaQuery('(max-width: 1023px)')
-
-watch(() => [tools.tool, tools.color, narrowScreen.value], () => {
-  zoomMode.value = null
-})
 
 const shaking = ref(false)
 const celebrating = ref(false)
@@ -94,7 +82,7 @@ onBeforeUnmount(() => {
           <img src="../../assets/icons/home.svg" alt="" width="64" height="60">
         </NuxtLink>
         <div class="board__controls">
-          <ColoringCanvasControls :zoom-mode="zoomMode" @reset="canvas?.clearAll()" @toggle="toggleZoom" />
+          <ColoringCanvasControls @reset="canvas?.clearAll()" />
         </div>
         <button
           type="button"
@@ -112,7 +100,6 @@ onBeforeUnmount(() => {
           <ColoringCanvas
             ref="canvas"
             :art="art"
-            :zoom-mode="zoomMode"
             @progress="liveProgress = $event"
             @history="onHistory"
             @status="syncStatus = $event"
@@ -122,7 +109,7 @@ onBeforeUnmount(() => {
 
         <div class="frame__top">
           <div class="frame__controls">
-            <ColoringCanvasControls :zoom-mode="zoomMode" @reset="canvas?.clearAll()" @toggle="toggleZoom" />
+            <ColoringCanvasControls @reset="canvas?.clearAll()" />
           </div>
           <p class="frame__progress" :class="{ 'frame__progress--done': percent >= 100 }" aria-live="polite">
             {{ percent }}%

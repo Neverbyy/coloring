@@ -12,7 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "postinstall": "nuxt prepare",
     "admin:create": "node scripts/create-admin.ts",
-    "test": "vitest run"
+    "test": "node scripts/test.ts"
   },
   "dependencies": {
     "@pinia/nuxt": "^1.0.3",

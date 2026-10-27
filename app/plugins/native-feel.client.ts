@@ -12,6 +12,6 @@ export default defineNuxtPlugin(() => {
   document.addEventListener('contextmenu', prevent)
   document.addEventListener('dragstart', prevent)
   document.addEventListener('touchmove', (event) => {
-    if (event.touches.length > 1 && inGame()) event.preventDefault()
+    if (event.touches.length > 1 && event.cancelable && inGame()) event.preventDefault()
   }, { passive: false })
 })

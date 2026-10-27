@@ -4,14 +4,15 @@ export interface CanvasView {
   y: number
 }
 
-export type ZoomMode = 'in' | 'out' | 'free'
-
-export const ZOOM_LEVELS: readonly number[] = [1, 1.5, 2.25, 3]
 export const ZOOM_MIN = 1
 export const ZOOM_MAX = 3
 export const INITIAL_VIEW: Readonly<CanvasView> = { scale: ZOOM_MIN, x: 0, y: 0 }
 
-const EPSILON = 1e-6
+const WHEEL_ZOOM_SPEED = 0.002
+const WHEEL_LINE_PX = 16
+const WHEEL_PAGE_PX = 800
+const TRACKPAD_PINCH_BOOST = 5
+const WHEEL_SETTLE = 0.002
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -23,28 +24,24 @@ export function clampView({ scale, x, y }: CanvasView): CanvasView {
   return { scale: next, x: clamp(x, -limit, limit), y: clamp(y, -limit, limit) }
 }
 
-export function nextZoomLevel(scale: number, direction: 1 | -1): number {
-  if (direction > 0) return ZOOM_LEVELS.find(level => level > scale + EPSILON) ?? ZOOM_MAX
-  return ZOOM_LEVELS.findLast(level => level < scale - EPSILON) ?? ZOOM_MIN
-}
-
-export function zoomAt(view: CanvasView, direction: 1 | -1, pointX: number, pointY: number): CanvasView {
-  const scale = nextZoomLevel(view.scale, direction)
-  const ratio = scale / view.scale
-  return clampView({
-    scale,
-    x: pointX - (pointX - view.x) * ratio,
-    y: pointY - (pointY - view.y) * ratio
-  })
-}
-
-export function panBy(view: CanvasView, dx: number, dy: number): CanvasView {
-  return clampView({ scale: view.scale, x: view.x + dx, y: view.y + dy })
-}
-
 export function pinchView(start: CanvasView, ratio: number, fromX: number, fromY: number, toX: number, toY: number): CanvasView {
   const scale = clamp(start.scale * ratio, ZOOM_MIN, ZOOM_MAX)
   const contentX = (fromX - start.x) / start.scale
   const contentY = (fromY - start.y) / start.scale
   return clampView({ scale, x: toX - scale * contentX, y: toY - scale * contentY })
+}
+
+export function wheelDelta(deltaY: number, deltaMode: number, pinch: boolean): number {
+  const pixels = deltaMode === 1 ? deltaY * WHEEL_LINE_PX : deltaMode === 2 ? deltaY * WHEEL_PAGE_PX : deltaY
+  return pinch ? pixels * TRACKPAD_PINCH_BOOST : pixels
+}
+
+export function addWheelZoom(scale: number, pending: number, delta: number): number {
+  const target = clamp(Math.log(scale) + pending - delta * WHEEL_ZOOM_SPEED, Math.log(ZOOM_MIN), Math.log(ZOOM_MAX))
+  return target - Math.log(scale)
+}
+
+export function stepWheelZoom(view: CanvasView, pending: number, pointX: number, pointY: number, fraction: number): { view: CanvasView, pending: number } {
+  const step = Math.abs(pending) <= WHEEL_SETTLE ? pending : pending * clamp(fraction, 0, 1)
+  return { view: pinchView(view, Math.exp(step), pointX, pointY, pointX, pointY), pending: pending - step }
 }
