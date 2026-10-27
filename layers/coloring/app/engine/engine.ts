@@ -16,7 +16,6 @@ interface ActiveStroke {
   lastY: number
   dirty: Box | null
   restorable: boolean
-  knockout: boolean
 }
 
 function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
@@ -126,9 +125,7 @@ export class ColoringEngine {
     const px = this.clampX(x)
     const py = this.clampY(y)
     const eraser = tool === 'eraser'
-    const knockout = !eraser && opacity !== undefined && opacity < 1
-    const restorable = eraser || knockout
-    if (restorable) this.saveBackup(segment.box)
+    if (eraser) this.saveBackup(segment.box)
     const op: StrokeOp = { t: 'stroke', tool, c: eraser ? null : color, p: [px, py] }
     if (!eraser && width !== undefined) op.w = width
     if (!eraser && opacity !== undefined) op.a = opacity
@@ -138,8 +135,7 @@ export class ColoringEngine {
       lastX: px,
       lastY: py,
       dirty: null,
-      restorable,
-      knockout
+      restorable: eraser
     }
     this.drawPath([px, py])
     return true
@@ -193,7 +189,7 @@ export class ColoringEngine {
       return null
     }
 
-    if (!active.knockout && active.op.tool !== 'eraser' && active.dirty) drawRegion(this.paint, this.preview.canvas, active.dirty)
+    if (active.op.tool !== 'eraser' && active.dirty) drawRegion(this.paint, this.preview.canvas, active.dirty)
     this.clearStroke(active)
     this.active = null
     if (measure) this.measure(active.segment)
@@ -216,9 +212,7 @@ export class ColoringEngine {
     if (op.t === 'stroke') {
       const segment = this.segmentAt(op.p[0]!, op.p[1]!)
       if (!segment) return null
-      const knockout = op.tool !== 'eraser' && (op.a ?? 1) < 1
-      if (knockout) this.saveBackup(segment.box)
-      this.active = { op, segment, lastX: op.p[0]!, lastY: op.p[1]!, dirty: null, restorable: false, knockout }
+      this.active = { op, segment, lastX: op.p[0]!, lastY: op.p[1]!, dirty: null, restorable: false }
       this.drawPath(op.p, segment.box)
       this.endStroke(measure)
       return segment
@@ -376,34 +370,22 @@ export class ColoringEngine {
 
     const style = TOOL_STYLES[active.op.tool]
     const eraser = active.op.tool === 'eraser'
-    const target = eraser || active.knockout ? this.scratch : this.preview
+    const target = eraser ? this.scratch : this.preview
 
     target.save()
     target.beginPath()
     target.rect(box.x, box.y, box.w, box.h)
     target.clip()
     target.clearRect(box.x, box.y, box.w, box.h)
+    target.globalAlpha = eraser ? 1 : active.op.a ?? 1
     drawRegion(target, this.stroke.canvas, box)
+    target.globalAlpha = 1
     target.globalCompositeOperation = 'destination-in'
     target.drawImage(this.mask(active.segment), box.x - segmentBox.x, box.y - segmentBox.y, box.w, box.h, box.x, box.y, box.w, box.h)
     if (style.textured) this.applyTexture(target, box)
     target.restore()
 
     if (eraser) this.erase(() => drawRegion(this.paint, this.scratch.canvas, box))
-    else if (active.knockout) this.replace(box, active.op.a ?? 1)
-  }
-
-  private replace(box: Box, opacity: number) {
-    const { paint } = this
-    paint.save()
-    paint.clearRect(box.x, box.y, box.w, box.h)
-    if (this.backup) drawRegion(paint, this.backup.canvas, box)
-    paint.globalCompositeOperation = 'destination-out'
-    drawRegion(paint, this.scratch.canvas, box)
-    paint.globalCompositeOperation = 'lighter'
-    paint.globalAlpha = opacity
-    drawRegion(paint, this.scratch.canvas, box)
-    paint.restore()
   }
 
   private applyTexture(context: CanvasRenderingContext2D, box: Box) {
@@ -425,7 +407,6 @@ export class ColoringEngine {
     context.globalCompositeOperation = 'destination-in'
     context.drawImage(this.mask(segment), box.x, box.y)
     context.restore()
-    this.clearSegment(segment)
     drawRegion(this.paint, this.scratch.canvas, box)
   }
 

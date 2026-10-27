@@ -15,12 +15,30 @@ export const MAX_THUMBNAIL_BYTES = 512 * 1024
 export type StrokeTool = 'brush' | 'pencil' | 'eraser'
 export type PaintTool = Exclude<StrokeTool, 'eraser'>
 
-export const STROKE_WIDTHS: Record<PaintTool, readonly number[]> = {
-  brush: [18, 34, 60],
-  pencil: [6, 12, 20]
+export interface StrokeRange {
+  min: number
+  max: number
+  initial: number
 }
-export const DEFAULT_WIDTH_INDEX = 1
-export const STROKE_OPACITIES: readonly number[] = [1, 0.6, 0.3]
+
+export const STROKE_WIDTH_RANGES: Record<PaintTool, StrokeRange> = {
+  brush: { min: 8, max: 80, initial: 34 },
+  pencil: { min: 3, max: 30, initial: 12 }
+}
+export const STROKE_OPACITY_RANGE: StrokeRange = { min: 0.1, max: 1, initial: 1 }
+
+export function parseStrokeWidth(tool: PaintTool, value: unknown): number | null {
+  const { min, max } = STROKE_WIDTH_RANGES[tool]
+  return Number.isInteger(value) && (value as number) >= min && (value as number) <= max ? value as number : null
+}
+
+export function parseStrokeOpacity(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const percent = Math.round(value * 100)
+  if (Math.abs(value * 100 - percent) > 1e-6) return null
+  const opacity = percent / 100
+  return opacity >= STROKE_OPACITY_RANGE.min && opacity <= STROKE_OPACITY_RANGE.max ? opacity : null
+}
 
 export interface StrokeOp { t: 'stroke', tool: StrokeTool, c: string | null, p: number[], w?: number, a?: number }
 export interface FillOp { t: 'fill', tool?: PaintTool, c: string, p: [number, number], a?: number }
@@ -98,12 +116,14 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
     const stroke: StrokeOp = { t: 'stroke', tool, c: color, p: points as number[] }
     if (tool === 'eraser') return stroke
     if (op.w !== undefined) {
-      if (!STROKE_WIDTHS[tool].includes(op.w as number)) return null
-      stroke.w = op.w as number
+      const width = parseStrokeWidth(tool, op.w)
+      if (width === null) return null
+      stroke.w = width
     }
     if (op.a !== undefined) {
-      if (!STROKE_OPACITIES.includes(op.a as number)) return null
-      stroke.a = op.a as number
+      const opacity = parseStrokeOpacity(op.a)
+      if (opacity === null) return null
+      stroke.a = opacity
     }
     return stroke
   }
@@ -115,8 +135,9 @@ export function parseHistoryOp(value: unknown): HistoryOp | null {
     if (tool !== 'brush' && tool !== 'pencil') return null
     const fill: FillOp = { t: 'fill', tool, c: op.c, p: point }
     if (op.a !== undefined) {
-      if (!STROKE_OPACITIES.includes(op.a as number)) return null
-      fill.a = op.a as number
+      const opacity = parseStrokeOpacity(op.a)
+      if (opacity === null) return null
+      fill.a = opacity
     }
     return fill
   }

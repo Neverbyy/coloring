@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  STROKE_OPACITY_RANGE,
+  STROKE_WIDTH_RANGES,
   MAX_COORD,
   MAX_STORED_OPS,
   MAX_STROKE_POINTS,
@@ -52,15 +54,29 @@ describe('проверка операций истории с клиента', (
     expect(parseHistoryOp({ t: 'clear', p: [7, 8], c: COLOR })).toEqual({ t: 'clear', p: [7, 8] })
   })
 
-  it('толщина и прозрачность штриха — только из наборов инструмента', () => {
+  it('толщина и прозрачность штриха — в диапазоне инструмента', () => {
     expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 60, a: 0.3 }))
       .toEqual({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 60, a: 0.3 })
     expect(parseHistoryOp({ t: 'stroke', tool: 'pencil', c: COLOR, p: [1, 2], w: 6, a: 0.6 }))
       .toEqual({ t: 'stroke', tool: 'pencil', c: COLOR, p: [1, 2], w: 6, a: 0.6 })
-    expect(parseHistoryOp({ t: 'stroke', tool: 'pencil', c: COLOR, p: [1, 2], w: 60 })).toBeNull()
-    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 500 })).toBeNull()
+    const { brush, pencil } = STROKE_WIDTH_RANGES
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: brush.min, a: STROKE_OPACITY_RANGE.min }))
+      .toMatchObject({ w: brush.min, a: STROKE_OPACITY_RANGE.min })
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 47, a: 0.35 })).toMatchObject({ w: 47, a: 0.35 })
+    expect(parseHistoryOp({ t: 'stroke', tool: 'pencil', c: COLOR, p: [1, 2], w: pencil.max + 1 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: brush.min - 1 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: 34.5 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], w: Number.NaN })).toBeNull()
     expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: 0 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: 0.05 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: 1.01 })).toBeNull()
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: 0.333 })).toBeNull()
     expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: '1' })).toBeNull()
+  })
+
+  it('прозрачность из ползунка с погрешностью дробей принимается и округляется', () => {
+    expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2], a: 1 - 0.65 })).toMatchObject({ a: 0.35 })
+    expect(parseHistoryOp({ t: 'fill', tool: 'pencil', c: COLOR, p: [1, 2], a: 0.1 + 0.2 })).toMatchObject({ a: 0.3 })
   })
 
   it('у резинки толщины и прозрачности нет', () => {
@@ -71,7 +87,8 @@ describe('проверка операций истории с клиента', (
   it('заливка с прозрачностью; без полей — как раньше', () => {
     expect(parseHistoryOp({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.6 }))
       .toEqual({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.6 })
-    expect(parseHistoryOp({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.5 })).toBeNull()
+    expect(parseHistoryOp({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.5 })).toMatchObject({ a: 0.5 })
+    expect(parseHistoryOp({ t: 'fill', tool: 'brush', c: COLOR, p: [1, 2], a: 0.01 })).toBeNull()
     expect(parseHistoryOp({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2] }))
       .toEqual({ t: 'stroke', tool: 'brush', c: COLOR, p: [1, 2] })
   })

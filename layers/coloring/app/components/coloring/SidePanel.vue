@@ -1,11 +1,17 @@
 <script setup lang="ts">
 import { COLORING_TOOLS, COLORING_TOOL_LABELS, type ColoringTool, type DrawingTool } from '#layers/coloring/app/stores/coloringTools'
-import { STROKE_OPACITIES } from '#layers/coloring/shared/history'
+import { STROKE_WIDTH_RANGES } from '#layers/coloring/shared/history'
 
 const store = useColoringToolsStore()
 const { tool, color, recentColors, paletteOpen, optionsOpen, widths, opacities } = storeToRefs(store)
 
-const BADGE_SIZES = [6, 10, 14]
+const BADGE_MIN = 6
+const BADGE_MAX = 14
+
+function badgeSize(item: DrawingTool): number {
+  const { min, max } = STROKE_WIDTH_RANGES[item]
+  return Math.round(BADGE_MIN + (widths.value[item] - min) / (max - min) * (BADGE_MAX - BADGE_MIN))
+}
 
 const ITEM_SIZE = 44
 const ITEM_GAP = 2
@@ -116,7 +122,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           <span v-if="item === tool && item !== 'eraser'" class="side-panel__badge" aria-hidden="true">
             <span
               class="side-panel__badge-dot"
-              :style="{ '--size': `${BADGE_SIZES[widths[item]]}px`, background: color, opacity: STROKE_OPACITIES[opacities[item]] }"
+              :style="{ '--size': `${badgeSize(item)}px`, background: color, opacity: opacities[item] }"
             />
           </span>
         </button>

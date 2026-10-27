@@ -1,4 +1,4 @@
-import { DEFAULT_WIDTH_INDEX, STROKE_WIDTHS, type StrokeTool } from '#layers/coloring/shared/history'
+import { STROKE_WIDTH_RANGES, type StrokeTool } from '#layers/coloring/shared/history'
 import { context2d, createCanvas } from './canvas'
 
 export interface ToolStyle {
@@ -7,8 +7,8 @@ export interface ToolStyle {
 }
 
 export const TOOL_STYLES: Record<StrokeTool, ToolStyle> = {
-  brush: { width: STROKE_WIDTHS.brush[DEFAULT_WIDTH_INDEX]!, textured: false },
-  pencil: { width: STROKE_WIDTHS.pencil[DEFAULT_WIDTH_INDEX]!, textured: true },
+  brush: { width: STROKE_WIDTH_RANGES.brush.initial, textured: false },
+  pencil: { width: STROKE_WIDTH_RANGES.pencil.initial, textured: true },
   eraser: { width: 40, textured: false }
 }
 

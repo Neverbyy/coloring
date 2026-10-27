@@ -1,4 +1,4 @@
-import { DEFAULT_WIDTH_INDEX, STROKE_OPACITIES, STROKE_WIDTHS, type PaintTool, type StrokeTool } from '#layers/coloring/shared/history'
+import { STROKE_OPACITY_RANGE, STROKE_WIDTH_RANGES, type PaintTool, type StrokeTool } from '#layers/coloring/shared/history'
 
 export type ColoringTool = StrokeTool
 export type DrawingTool = PaintTool
@@ -13,6 +13,10 @@ export const COLORING_TOOL_LABELS: Record<ColoringTool, string> = {
 
 const RECENT_COLORS_LIMIT = 2
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
 export const useColoringToolsStore = defineStore('coloring-tools', () => {
   const tool = ref<ColoringTool>('brush')
   const lastDrawingTool = ref<DrawingTool>('brush')
@@ -20,12 +24,18 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
   const recentColors = ref<string[]>(['#12ABEC', '#EC12AB'])
   const paletteOpen = ref(false)
   const optionsOpen = ref(false)
-  const widths = ref<Record<DrawingTool, number>>({ brush: DEFAULT_WIDTH_INDEX, pencil: DEFAULT_WIDTH_INDEX })
-  const opacities = ref<Record<DrawingTool, number>>({ brush: 0, pencil: 0 })
+  const widths = ref<Record<DrawingTool, number>>({
+    brush: STROKE_WIDTH_RANGES.brush.initial,
+    pencil: STROKE_WIDTH_RANGES.pencil.initial
+  })
+  const opacities = ref<Record<DrawingTool, number>>({
+    brush: STROKE_OPACITY_RANGE.initial,
+    pencil: STROKE_OPACITY_RANGE.initial
+  })
 
   const paintTool = computed<DrawingTool>(() => tool.value === 'eraser' ? lastDrawingTool.value : tool.value)
-  const strokeWidth = computed(() => STROKE_WIDTHS[paintTool.value][widths.value[paintTool.value]]!)
-  const strokeOpacity = computed(() => STROKE_OPACITIES[opacities.value[paintTool.value]]!)
+  const strokeWidth = computed(() => widths.value[paintTool.value])
+  const strokeOpacity = computed(() => opacities.value[paintTool.value])
 
   function selectTool(next: ColoringTool) {
     optionsOpen.value = next === tool.value && next !== 'eraser' && !optionsOpen.value
@@ -45,12 +55,13 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
     optionsOpen.value = false
   }
 
-  function selectWidth(index: number) {
-    widths.value[paintTool.value] = index
+  function setWidth(value: number) {
+    const { min, max } = STROKE_WIDTH_RANGES[paintTool.value]
+    widths.value[paintTool.value] = clamp(Math.round(value), min, max)
   }
 
-  function selectOpacity(index: number) {
-    opacities.value[paintTool.value] = index
+  function setOpacity(value: number) {
+    opacities.value[paintTool.value] = clamp(Math.round(value * 100) / 100, STROKE_OPACITY_RANGE.min, STROKE_OPACITY_RANGE.max)
   }
 
   function togglePalette() {
@@ -76,8 +87,8 @@ export const useColoringToolsStore = defineStore('coloring-tools', () => {
     strokeOpacity,
     selectTool,
     selectColor,
-    selectWidth,
-    selectOpacity,
+    setWidth,
+    setOpacity,
     togglePalette,
     closePalette
   }
